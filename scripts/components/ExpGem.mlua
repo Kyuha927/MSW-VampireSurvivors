@@ -1,0 +1,172 @@
+--------------------------------------------------------------------------------
+-- ExpGem.mlua
+-- 경험치 젬 컴포넌트 - 플레이어 접근 시 흡수되어 경험치 부여
+--
+-- [메이커 설정]
+-- 1. 경험치 젬 엔티티를 만들고 이 컴포넌트 추가
+-- 2. SpriteRendererComponent 추가 (젬 스프라이트)
+-- 3. TriggerComponent 추가 (수집 판정 영역, 넉넉하게 설정)
+-- 4. Model로 등록
+--------------------------------------------------------------------------------
+
+@Component
+script ExpGem extends Component
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- 경험치량
+    @Sync
+    @DisplayName("경험치량")
+    property number ExpAmount = 10
+
+    -- 자석 효과 범위 (이 거리 안이면 플레이어에게 끌려감)
+    @DisplayName("자석 범위")
+    property number MagnetRange = 150
+
+    -- 끌려가는 속도
+    @DisplayName("자석 속도")
+    property number MagnetSpeed = 500
+
+    -- 수집 거리 (이 거리 안이면 즉시 흡수)
+    @DisplayName("수집 거리")
+    property number CollectDistance = 30
+
+    -- 수명 (초) - 너무 오래 남아있지 않게
+    @DisplayName("수명")
+    property number Lifetime = 30
+
+    -- 드롭 후 수집 불가 시간 (튀어오르는 연출 시간)
+    @DisplayName("수집 딜레이")
+    property number CollectDelay = 0.3
+
+    ----------------------------------------
+    -- Internal State
+    ----------------------------------------
+
+    property number _aliveTimer = 0
+    property boolean _collected = false
+    property string _playerEntityId = ""
+
+    ----------------------------------------
+    -- 초기화
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self._aliveTimer = 0
+        self._collected = false
+    end
+
+    ----------------------------------------
+    -- 매 프레임 (Server)
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number dt)
+        if self._collected then
+            return
+        end
+
+        -- 수명 체크
+        self._aliveTimer = self._aliveTimer + dt
+        if self._aliveTimer >= self.Lifetime then
+            self.Entity:Destroy()
+            return
+        end
+
+        -- 수집 딜레이
+        if self._aliveTimer < self.CollectDelay then
+            return
+        end
+
+        -- 플레이어를 찾아서 거리 체크
+        self:CheckPlayerProximity(dt)
+    end
+
+    ----------------------------------------
+    -- 플레이어 접근 체크 + 자석 효과
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void CheckPlayerProximity(number dt)
+        -- 플레이어 ID가 없으면 GameManager에서 가져오기 시도
+        if self._playerEntityId == "" then
+            -- ※ Logic 접근 방식은 MSW API에 따라 조정
+            -- self._playerEntityId = _GameManagerLogic.PlayerEntityId
+            return
+        end
+
+        ---@type Entity
+        local playerEntity = _EntityService:GetEntity(self._playerEntityId)
+        if playerEntity == nil then
+            return
+        end
+
+        local myPos = self.Entity.TransformComponent.Position
+        local playerPos = playerEntity.TransformComponent.Position
+
+        local dx = playerPos.x - myPos.x
+        local dy = playerPos.y - myPos.y
+        local dist = math.sqrt(dx * dx + dy * dy)
+
+        -- 수집 거리 안이면 즉시 흡수
+        if dist <= self.CollectDistance then
+            self:Collect(playerEntity)
+            return
+        end
+
+        -- 자석 범위 안이면 끌려감
+        if dist <= self.MagnetRange then
+            local ndx = dx / dist
+            local ndy = dy / dist
+            local speed = self.MagnetSpeed * dt
+
+            -- 남은 거리보다 빠르게 이동하지 않게
+            if speed > dist then
+                speed = dist
+            end
+
+            self.Entity.TransformComponent.Position = Vector3(
+                myPos.x + ndx * speed,
+                myPos.y + ndy * speed,
+                myPos.z
+            )
+        end
+    end
+
+    ----------------------------------------
+    -- 수집 처리
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void Collect(Entity playerEntity)
+        if self._collected then
+            return
+        end
+        self._collected = true
+
+        -- 플레이어에게 경험치 부여
+        ---@type LevelSystem
+        local levelSys = playerEntity.LevelSystem
+        if levelSys ~= nil then
+            levelSys:AddExp(self.ExpAmount)
+        end
+
+        log("[ExpGem] 수집! +" .. tostring(self.ExpAmount) .. " EXP")
+
+        -- 젬 엔티티 파괴
+        self.Entity:Destroy()
+    end
+
+    ----------------------------------------
+    -- 플레이어 ID 설정 (스폰 시 외부에서 호출)
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void SetPlayerEntityId(string entityId)
+        self._playerEntityId = entityId
+    end
+
+end

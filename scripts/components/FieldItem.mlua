@@ -1,0 +1,162 @@
+--------------------------------------------------------------------------------
+-- FieldItem.mlua
+-- 필드 아이템 컴포넌트 - 치유/자석/폭탄 등
+--
+-- [메이커 설정]
+-- 1. 아이템 엔티티에 이 컴포넌트 + TriggerComponent + SpriteRendererComponent 추가
+-- 2. ItemType에 따라 다른 효과 적용
+-- 3. Model로 등록
+--------------------------------------------------------------------------------
+
+@Component
+script FieldItem extends Component
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- 아이템 유형: "heal", "magnet", "bomb", "exp_all"
+    @Sync
+    @DisplayName("아이템 유형")
+    property string ItemType = "heal"
+
+    -- 효과 수치 (아이템에 따라 의미 다름)
+    @DisplayName("효과 수치")
+    property number EffectValue = 50
+
+    -- 생존 시간
+    @DisplayName("생존 시간")
+    property number Lifetime = 15.0
+
+    -- 줍기 범위
+    @DisplayName("줍기 범위")
+    property number PickupRange = 40
+
+    ----------------------------------------
+    -- Internal
+    ----------------------------------------
+
+    property number _lifeTimer = 0
+    property boolean _collected = false
+
+    ----------------------------------------
+    -- 초기화
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self._lifeTimer = self.Lifetime
+        self._collected = false
+    end
+
+    ----------------------------------------
+    -- 매 프레임
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number dt)
+        if self._collected then return end
+
+        -- 수명 체크
+        self._lifeTimer = self._lifeTimer - dt
+        if self._lifeTimer <= 0 then
+            self.Entity:Destroy()
+            return
+        end
+    end
+
+    ----------------------------------------
+    -- 접촉 감지 (트리거)
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    handler void OnTriggerEnter(OnTriggerBodyEnterEvent event)
+        if self._collected then return end
+
+        ---@type Entity
+        local other = event.Entity
+        if other == nil then return end
+
+        -- 플레이어인지 확인 (PlayerMovement 컴포넌트가 있으면 플레이어)
+        ---@type PlayerMovement
+        local pm = other.PlayerMovement
+        if pm == nil then return end
+
+        self._collected = true
+        self:ApplyEffect(other)
+        self.Entity:Destroy()
+    end
+
+    ----------------------------------------
+    -- 효과 적용
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void ApplyEffect(Entity playerEntity)
+        if self.ItemType == "heal" then
+            self:ApplyHeal(playerEntity)
+        elseif self.ItemType == "magnet" then
+            self:ApplyMagnet(playerEntity)
+        elseif self.ItemType == "bomb" then
+            self:ApplyBomb(playerEntity)
+        elseif self.ItemType == "exp_all" then
+            self:ApplyExpAll(playerEntity)
+        end
+    end
+
+    ----------------------------------------
+    -- 치유: HP 회복
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void ApplyHeal(Entity playerEntity)
+        ---@type Health
+        local hp = playerEntity.Health
+        if hp ~= nil then
+            hp:Heal(self.EffectValue)
+            log("[FieldItem] 치유! +" .. tostring(self.EffectValue) .. " HP")
+        end
+    end
+
+    ----------------------------------------
+    -- 자석: 화면의 모든 EXP 보석을 플레이어에게 흡수
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void ApplyMagnet(Entity playerEntity)
+        -- TODO: 맵에 있는 모든 ExpGem Entity를 플레이어 위치로 순간이동
+        -- ※ 실제 구현 시 Entity 순회 API 필요
+        log("[FieldItem] 자석 발동! 모든 보석 흡수")
+
+        -- 간이 구현: ExpGem의 MagnetRange를 임시로 매우 크게
+        -- ※ MSW에서 Entity 순회 방법에 따라 달라짐
+    end
+
+    ----------------------------------------
+    -- 폭탄: 화면의 모든 적에게 대미지
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void ApplyBomb(Entity playerEntity)
+        -- TODO: 일정 범위 내 모든 적에게 큰 데미지
+        local damage = self.EffectValue
+        log("[FieldItem] 폭탄! " .. tostring(damage) .. " 대미지")
+
+        -- ※ 실제 구현 시 Entity 순회 API로 Enemy_ 패턴의 모든 엔티티에 대미지
+    end
+
+    ----------------------------------------
+    -- EXP 전체 흡수: 경험치 직접 부여
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void ApplyExpAll(Entity playerEntity)
+        ---@type LevelSystem
+        local levelSys = playerEntity.LevelSystem
+        if levelSys ~= nil then
+            levelSys:AddExp(self.EffectValue)
+            log("[FieldItem] EXP +" .. tostring(self.EffectValue))
+        end
+    end
+
+end

@@ -1,0 +1,175 @@
+--------------------------------------------------------------------------------
+-- PlayerStats.mlua
+-- 플레이어 스탯 관리 컴포넌트 - 패시브로 증가하는 스탯 적용
+--
+-- [메이커 설정]
+-- 1. Player 엔티티에 이 컴포넌트 추가
+-- 2. 패시브 효과가 이 스탯에 반영됨
+-- 3. AutoAttack, PlayerMovement 등이 이 스탯을 참조
+--------------------------------------------------------------------------------
+
+@Component
+script PlayerStats extends Component
+
+    ----------------------------------------
+    -- 기본 플레이어 스탯 (곱연산 배율)
+    ----------------------------------------
+
+    -- 이동속도 배율 (1.0 = 기본)
+    @Sync
+    @DisplayName("이동속도 배율")
+    property number MoveSpeedMult = 1.0
+
+    -- 공격력 배율
+    @Sync
+    @DisplayName("공격력 배율")
+    property number DamageMult = 1.0
+
+    -- 쿨다운 배율 (낮을수록 빠름)
+    @Sync
+    @DisplayName("쿨다운 배율")
+    property number CooldownMult = 1.0
+
+    -- 투사체 크기 배율
+    @Sync
+    @DisplayName("범위 배율")
+    property number AreaMult = 1.0
+
+    -- 경험치 수집 범위 배율
+    @Sync
+    @DisplayName("자석 배율")
+    property number MagnetMult = 1.0
+
+    -- HP 재생량 (/5초)
+    @Sync
+    @DisplayName("HP 재생")
+    property number HpRegen = 0
+
+    ----------------------------------------
+    -- 보유 패시브 레벨 추적
+    ----------------------------------------
+
+    property table _passiveLevels = {}
+
+    ----------------------------------------
+    -- 초기화
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.MoveSpeedMult = 1.0
+        self.DamageMult = 1.0
+        self.CooldownMult = 1.0
+        self.AreaMult = 1.0
+        self.MagnetMult = 1.0
+        self.HpRegen = 0
+        self._passiveLevels = {}
+    end
+
+    ----------------------------------------
+    -- HP 재생 처리
+    ----------------------------------------
+
+    property number _regenTimer = 0
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number dt)
+        if self.HpRegen <= 0 then
+            return
+        end
+
+        self._regenTimer = self._regenTimer + dt
+        if self._regenTimer >= 5.0 then
+            self._regenTimer = self._regenTimer - 5.0
+
+            ---@type Health
+            local health = self.Entity.Health
+            if health ~= nil and health.IsAlive then
+                health:Heal(self.HpRegen)
+            end
+        end
+    end
+
+    ----------------------------------------
+    -- 패시브 적용
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void ApplyPassive(string passiveId)
+        -- 현재 레벨 확인
+        local currentLevel = 0
+        if self._passiveLevels[passiveId] ~= nil then
+            currentLevel = self._passiveLevels[passiveId]
+        end
+
+        -- 레벨 증가
+        currentLevel = currentLevel + 1
+        self._passiveLevels[passiveId] = currentLevel
+
+        -- 스탯 재계산
+        self:RecalculateStats()
+
+        log("[PlayerStats] 패시브 적용: " .. passiveId .. " Lv." .. tostring(currentLevel))
+    end
+
+    ----------------------------------------
+    -- 전체 스탯 재계산
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void RecalculateStats()
+        -- 기본값으로 초기화
+        self.MoveSpeedMult = 1.0
+        self.DamageMult = 1.0
+        self.CooldownMult = 1.0
+        self.AreaMult = 1.0
+        self.MagnetMult = 1.0
+        self.HpRegen = 0
+
+        -- 각 패시브 레벨만큼 적용
+        for passiveId, level in pairs(self._passiveLevels) do
+            if passiveId == "speed_up" then
+                self.MoveSpeedMult = self.MoveSpeedMult + 0.10 * level
+            elseif passiveId == "damage_up" then
+                self.DamageMult = self.DamageMult + 0.15 * level
+            elseif passiveId == "cooldown_down" then
+                self.CooldownMult = self.CooldownMult - 0.08 * level
+                if self.CooldownMult < 0.2 then
+                    self.CooldownMult = 0.2  -- 최소 쿨다운 배율
+                end
+            elseif passiveId == "max_hp_up" then
+                ---@type Health
+                local health = self.Entity.Health
+                if health ~= nil then
+                    health.MaxHP = 100 + 20 * level
+                    health.CurrentHP = math.min(health.CurrentHP + 20, health.MaxHP)
+                end
+            elseif passiveId == "hp_regen" then
+                self.HpRegen = 1 * level
+            elseif passiveId == "magnet" then
+                self.MagnetMult = self.MagnetMult + 0.30 * level
+            elseif passiveId == "area_up" then
+                self.AreaMult = self.AreaMult + 0.10 * level
+            end
+        end
+
+        -- 이동속도 즉시 반영
+        ---@type PlayerMovement
+        local movement = self.Entity.PlayerMovement
+        if movement ~= nil then
+            movement.MoveSpeed = 200 * self.MoveSpeedMult
+        end
+    end
+
+    ----------------------------------------
+    -- 패시브 레벨 조회
+    ----------------------------------------
+
+    method number GetPassiveLevel(string passiveId)
+        if self._passiveLevels[passiveId] ~= nil then
+            return self._passiveLevels[passiveId]
+        end
+        return 0
+    end
+
+end

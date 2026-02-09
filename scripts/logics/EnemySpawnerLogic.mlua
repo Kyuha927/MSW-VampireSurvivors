@@ -1,0 +1,246 @@
+--------------------------------------------------------------------------------
+-- EnemySpawnerLogic.mlua
+-- 적 웨이브 스폰 로직 (전역 싱글톤)
+--
+-- [메이커 설정]
+-- 1. 이 스크립트를 Logic으로 등록
+-- 2. Enemy 엔티티를 미리 Model로 등록해두어야 함
+--    - Enemy Model에 포함할 컴포넌트:
+--      TransformComponent, SpriteRendererComponent, TriggerComponent,
+--      EnemyChase, Health, ContactDamage
+-- 3. EnemyModelId 프로퍼티에 등록한 Enemy Model의 ID 입력
+--------------------------------------------------------------------------------
+
+@Logic
+script EnemySpawnerLogic extends Logic
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- 적 모델 ID (메이커에서 등록한 Enemy 모델의 ID)
+    @DisplayName("적 모델 ID")
+    @Description("메이커에서 등록한 Enemy 엔티티 모델 ID")
+    property string EnemyModelId = ""
+
+    -- 스폰 주기 (초)
+    @Sync
+    @DisplayName("스폰 주기")
+    property number SpawnInterval = 2.0
+
+    -- 최소 스폰 주기 (난이도 상승 하한)
+    @DisplayName("최소 스폰 주기")
+    property number MinSpawnInterval = 0.3
+
+    -- 한 번에 스폰되는 적 수
+    @Sync
+    @DisplayName("스폰 수")
+    property number SpawnCount = 1
+
+    -- 스폰 거리 (플레이어 기준, 최소~최대)
+    @DisplayName("최소 스폰 거리")
+    property number MinSpawnDistance = 500
+
+    @DisplayName("최대 스폰 거리")
+    property number MaxSpawnDistance = 700
+
+    -- 최대 동시 적 수
+    @DisplayName("최대 적 수")
+    property number MaxEnemies = 50
+
+    -- 난이도 상승 주기 (초마다 스폰 빨라짐)
+    @DisplayName("난이도 상승 주기")
+    property number DifficultyInterval = 30
+
+    -- 난이도 상승 시 스폰 주기 감소량
+    @DisplayName("주기 감소량")
+    property number IntervalReduction = 0.2
+
+    -- 난이도 상승 시 추가 스폰 수
+    @DisplayName("추가 스폰 수")
+    property number SpawnCountIncrease = 1
+
+    ----------------------------------------
+    -- Internal State
+    ----------------------------------------
+
+    -- 스폰 타이머
+    property number _spawnTimer = 0
+
+    -- 난이도 타이머
+    property number _difficultyTimer = 0
+
+    -- 현재 살아있는 적 수 추적
+    property number _currentEnemyCount = 0
+
+    -- 스폰 활성화 여부
+    property boolean _spawningActive = false
+
+    -- 플레이어 엔티티 ID (GameManagerLogic에서 설정)
+    property string PlayerEntityId = ""
+
+    ----------------------------------------
+    -- 초기화
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self._spawnTimer = self.SpawnInterval
+        self._difficultyTimer = 0
+        self._currentEnemyCount = 0
+        self._spawningActive = true
+
+        log("[EnemySpawner] 스폰 시스템 시작 - 주기: " .. tostring(self.SpawnInterval) .. "초")
+    end
+
+    ----------------------------------------
+    -- 매 프레임 스폰 로직
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number dt)
+        if not self._spawningActive then
+            return
+        end
+
+        -- 스폰 타이머
+        self._spawnTimer = self._spawnTimer - dt
+        if self._spawnTimer <= 0 then
+            self:SpawnWave()
+            self._spawnTimer = self.SpawnInterval
+        end
+
+        -- 난이도 상승 타이머
+        self._difficultyTimer = self._difficultyTimer + dt
+        if self._difficultyTimer >= self.DifficultyInterval then
+            self:IncreaseDifficulty()
+            self._difficultyTimer = 0
+        end
+    end
+
+    ----------------------------------------
+    -- 적 웨이브 스폰
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void SpawnWave()
+        -- 최대 적 수 초과 방지
+        if self._currentEnemyCount >= self.MaxEnemies then
+            return
+        end
+
+        -- 플레이어 위치 찾기
+        if self.PlayerEntityId == "" then
+            log("[EnemySpawner] 경고: PlayerEntityId가 설정되지 않음!")
+            return
+        end
+
+        ---@type Entity
+        local playerEntity = _EntityService:GetEntity(self.PlayerEntityId)
+        if playerEntity == nil then
+            return
+        end
+
+        local playerPos = playerEntity.TransformComponent.Position
+
+        -- 스폰 수만큼 반복
+        local count = math.floor(self.SpawnCount)
+        for i = 1, count do
+            if self._currentEnemyCount >= self.MaxEnemies then
+                break
+            end
+
+            -- 랜덤 각도로 스폰 위치 계산
+            local angle = math.random() * 2 * math.pi
+            local distance = self.MinSpawnDistance + math.random() * (self.MaxSpawnDistance - self.MinSpawnDistance)
+
+            local spawnX = playerPos.x + math.cos(angle) * distance
+            local spawnY = playerPos.y + math.sin(angle) * distance
+
+            self:SpawnEnemy(spawnX, spawnY)
+        end
+    end
+
+    ----------------------------------------
+    -- 개별 적 스폰
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void SpawnEnemy(number x, number y)
+        if self.EnemyModelId == "" then
+            log("[EnemySpawner] 경고: EnemyModelId가 설정되지 않음!")
+            return
+        end
+
+        -- ※ 모델 ID로 엔티티 스폰 - MSW API에 따라 조정 필요
+        -- 방법 1: _SpawnService 사용
+        local spawnPos = Vector3(x, y, 0)
+        local enemyName = "Enemy_" .. tostring(math.random(10000, 99999))
+
+        ---@type Entity
+        local enemy = _SpawnService:SpawnByModelId(
+            self.EnemyModelId,
+            enemyName,
+            spawnPos,
+            nil    -- 부모 엔티티 (nil = 최상위)
+        )
+        -- ※ API가 다를 수 있음. 대안:
+        -- _EntityService:SpawnByModelId(...)
+        -- _WorldService:SpawnEntity(...)
+
+        if enemy ~= nil then
+            -- 적의 추적 대상을 플레이어로 설정
+            ---@type EnemyChase
+            local chase = enemy.EnemyChase
+            if chase ~= nil then
+                chase.TargetEntityId = self.PlayerEntityId
+            end
+
+            self._currentEnemyCount = self._currentEnemyCount + 1
+            log("[EnemySpawner] 적 스폰: " .. enemyName .. " 위치: (" .. tostring(x) .. ", " .. tostring(y) .. ")")
+        end
+    end
+
+    ----------------------------------------
+    -- 난이도 상승
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void IncreaseDifficulty()
+        -- 스폰 주기 단축
+        self.SpawnInterval = math.max(
+            self.MinSpawnInterval,
+            self.SpawnInterval - self.IntervalReduction
+        )
+
+        -- 스폰 수 증가
+        self.SpawnCount = self.SpawnCount + self.SpawnCountIncrease
+
+        log("[EnemySpawner] 난이도 상승! 주기: " .. tostring(self.SpawnInterval)
+            .. "초, 스폰 수: " .. tostring(self.SpawnCount))
+    end
+
+    ----------------------------------------
+    -- 적 사망 시 카운트 감소 (외부에서 호출)
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void OnEnemyDied()
+        self._currentEnemyCount = math.max(0, self._currentEnemyCount - 1)
+    end
+
+    ----------------------------------------
+    -- 스폰 제어
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void StartSpawning()
+        self._spawningActive = true
+    end
+
+    @ExecSpace("Server")
+    method void StopSpawning()
+        self._spawningActive = false
+    end
+
+end

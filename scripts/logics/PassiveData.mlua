@@ -1,0 +1,92 @@
+--------------------------------------------------------------------------------
+-- PassiveData.mlua
+-- 패시브 능력 데이터 정의
+--
+-- [용도]
+-- 레벨업 선택지에 무기 외 패시브 옵션 제공
+--------------------------------------------------------------------------------
+
+@Logic
+script PassiveData extends Logic
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        log("[PassiveData] 패시브 데이터 로드 완료")
+    end
+
+    ----------------------------------------
+    -- 패시브 ID로 기본 스펙 반환
+    ----------------------------------------
+
+    method table GetPassiveById(string passiveId)
+
+        if passiveId == "speed_up" then
+            return {
+                id = "speed_up",
+                name = "이동속도 증가",
+                description = "이동속도가 10% 증가합니다.",
+                maxLevel = 5,
+                valuePerLevel = 0.10  -- 10% 씩
+            }
+        elseif passiveId == "damage_up" then
+            return {
+                id = "damage_up",
+                name = "공격력 증가",
+                description = "모든 무기 공격력이 15% 증가합니다.",
+                maxLevel = 5,
+                valuePerLevel = 0.15
+            }
+        elseif passiveId == "cooldown_down" then
+            return {
+                id = "cooldown_down",
+                name = "쿨다운 감소",
+                description = "모든 무기 쿨타임이 8% 감소합니다.",
+                maxLevel = 5,
+                valuePerLevel = 0.08
+            }
+        elseif passiveId == "max_hp_up" then
+            return {
+                id = "max_hp_up",
+                name = "최대 HP 증가",
+                description = "최대 HP가 20 증가합니다.",
+                maxLevel = 5,
+                valuePerLevel = 20
+            }
+        elseif passiveId == "hp_regen" then
+            return {
+                id = "hp_regen",
+                name = "HP 재생",
+                description = "5초마다 HP를 1 회복합니다.",
+                maxLevel = 5,
+                valuePerLevel = 1
+            }
+        elseif passiveId == "magnet" then
+            return {
+                id = "magnet",
+                name = "자석",
+                description = "경험치 젬 수집 범위가 30% 증가합니다.",
+                maxLevel = 5,
+                valuePerLevel = 0.30
+            }
+        elseif passiveId == "area_up" then
+            return {
+                id = "area_up",
+                name = "범위 증가",
+                description = "투사체 크기가 10% 증가합니다.",
+                maxLevel = 5,
+                valuePerLevel = 0.10
+            }
+        end
+
+        return nil
+    end
+
+    ----------------------------------------
+    -- 사용 가능한 모든 패시브 ID 목록
+    ----------------------------------------
+
+    method table GetAllPassiveIds()
+        return {"speed_up", "damage_up", "cooldown_down", "max_hp_up", "hp_regen", "magnet", "area_up"}
+    end
+
+end

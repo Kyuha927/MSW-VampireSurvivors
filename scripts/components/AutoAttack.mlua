@@ -1,0 +1,216 @@
+--------------------------------------------------------------------------------
+-- AutoAttack.mlua
+-- 자동 공격 컴포넌트 - 가장 가까운 적에게 주기적으로 투사체 발사
+--
+-- [메이커 설정]
+-- 1. Player 엔티티에 이 스크립트 컴포넌트 추가
+-- 2. Projectile 엔티티를 Model로 등록 후 ProjectileModelId에 입력
+--------------------------------------------------------------------------------
+
+@Component
+script AutoAttack extends Component
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- 투사체 모델 ID
+    @DisplayName("투사체 모델 ID")
+    @Description("메이커에 등록한 Projectile 모델 ID")
+    property string ProjectileModelId = ""
+
+    -- 공격 쿨타임 (초)
+    @Sync
+    @DisplayName("공격 쿨타임")
+    @Description("투사체 발사 간격 (초)")
+    property number AttackCooldown = 1.0
+
+    -- 공격력
+    @Sync
+    @DisplayName("공격력")
+    property number AttackDamage = 10
+
+    -- 탐색 반경 (이 범위 안의 적만 타겟팅)
+    @DisplayName("탐색 반경")
+    property number DetectRadius = 600
+
+    -- 투사체 속도
+    @DisplayName("투사체 속도")
+    property number ProjectileSpeed = 400
+
+    -- 투사체 수명 (초)
+    @DisplayName("투사체 수명")
+    property number ProjectileLifetime = 2.0
+
+    -- 투사체 크기
+    @DisplayName("투사체 크기")
+    property number ProjectileScale = 1.0
+
+    -- 동시 발사 수 (레벨업 시 증가)
+    @Sync
+    @DisplayName("동시 발사 수")
+    property number ProjectileCount = 1
+
+    ----------------------------------------
+    -- Internal State
+    ----------------------------------------
+
+    property number _cooldownTimer = 0
+
+    ----------------------------------------
+    -- 매 프레임 공격 로직 (Server)
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number dt)
+        -- 쿨타임 감소
+        self._cooldownTimer = self._cooldownTimer - dt
+
+        if self._cooldownTimer > 0 then
+            return
+        end
+
+        -- 쿨타임 리셋
+        self._cooldownTimer = self.AttackCooldown
+
+        -- 공격 실행
+        self:Fire()
+    end
+
+    ----------------------------------------
+    -- 발사 처리
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void Fire()
+        if self.ProjectileModelId == "" then
+            return
+        end
+
+        local myPos = self.Entity.TransformComponent.Position
+
+        -- 가장 가까운 적 찾기
+        local nearestEnemy, nearestDist = self:FindNearestEnemy(myPos)
+
+        -- 발사 방향 결정
+        local dirX = 0
+        local dirY = 0
+
+        if nearestEnemy ~= nil then
+            -- 가장 가까운 적 방향
+            local enemyPos = nearestEnemy.TransformComponent.Position
+            dirX = enemyPos.x - myPos.x
+            dirY = enemyPos.y - myPos.y
+            local len = math.sqrt(dirX * dirX + dirY * dirY)
+            if len > 0 then
+                dirX = dirX / len
+                dirY = dirY / len
+            end
+        else
+            -- 적이 없으면 마지막 이동 방향으로 발사
+            ---@type PlayerMovement
+            local movement = self.Entity.PlayerMovement
+            if movement ~= nil then
+                dirX = movement.LastDirX
+                dirY = movement.LastDirY
+            else
+                dirX = 1
+                dirY = 0
+            end
+        end
+
+        -- 투사체 발사
+        local count = math.floor(self.ProjectileCount)
+        if count <= 1 then
+            -- 단일 발사
+            self:SpawnProjectile(myPos, dirX, dirY)
+        else
+            -- 다중 발사: 부채꼴로 퍼뜨림
+            local spreadAngle = math.rad(15) -- 투사체 간 각도
+            local startAngle = math.atan(dirY, dirX) - spreadAngle * (count - 1) / 2
+
+            for i = 0, count - 1 do
+                local angle = startAngle + spreadAngle * i
+                local dx = math.cos(angle)
+                local dy = math.sin(angle)
+                self:SpawnProjectile(myPos, dx, dy)
+            end
+        end
+    end
+
+    ----------------------------------------
+    -- 투사체 생성
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void SpawnProjectile(Vector3 originPos, number dirX, number dirY)
+        local spawnPos = Vector3(originPos.x, originPos.y, originPos.z)
+        local projName = "Proj_" .. tostring(math.random(10000, 99999))
+
+        ---@type Entity
+        local proj = _SpawnService:SpawnByModelId(
+            self.ProjectileModelId,
+            projName,
+            spawnPos,
+            nil
+        )
+
+        if proj ~= nil then
+            ---@type Projectile
+            local projComp = proj.Projectile
+            if projComp ~= nil then
+                projComp.DirX = dirX
+                projComp.DirY = dirY
+                projComp.Speed = self.ProjectileSpeed
+                projComp.Damage = self.AttackDamage
+                projComp.Lifetime = self.ProjectileLifetime
+            end
+
+            -- 투사체 크기 조절
+            if self.ProjectileScale ~= 1.0 then
+                proj.TransformComponent.Scale = Vector3(
+                    self.ProjectileScale,
+                    self.ProjectileScale,
+                    1
+                )
+            end
+        end
+    end
+
+    ----------------------------------------
+    -- 가장 가까운 적 탐색
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method Entity FindNearestEnemy(Vector3 myPos)
+        -- ※ MSW에서 엔티티 목록을 순회하는 방식은 API에 따라 다를 수 있음
+        -- 방법 1: _EntityService를 통해 특정 태그/이름 패턴으로 검색
+        -- 방법 2: 스폰 시 목록을 직접 관리
+        -- 방법 3: _WorldService:GetEntitiesInRadius() 등
+        --
+        -- 아래는 이름 패턴("Enemy_")으로 찾는 간이 구현입니다.
+        -- 실제 MSW API에 맞게 수정이 필요합니다.
+
+        ---@type Entity
+        local nearest = nil
+        local nearestDist = self.DetectRadius * self.DetectRadius -- 제곱 비교
+
+        -- ※ 실제 구현 시 아래 주석을 해제하고 API에 맞게 수정
+        -- local entities = _EntityService:GetAllEntities()
+        -- for _, entity in pairs(entities) do
+        --     if entity.Name ~= nil and string.sub(entity.Name, 1, 6) == "Enemy_" then
+        --         local ePos = entity.TransformComponent.Position
+        --         local dx = ePos.x - myPos.x
+        --         local dy = ePos.y - myPos.y
+        --         local distSq = dx * dx + dy * dy
+        --         if distSq < nearestDist then
+        --             nearestDist = distSq
+        --             nearest = entity
+        --         end
+        --     end
+        -- end
+
+        return nearest
+    end
+
+end

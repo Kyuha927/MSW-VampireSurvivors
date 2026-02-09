@@ -1,0 +1,45 @@
+--------------------------------------------------------------------------------
+-- SurvivalTimerUI.mlua
+-- 생존 타이머 UI 표시 컴포넌트 (클라이언트)
+--
+-- [메이커 설정]
+-- 1. UI 엔티티에 이 컴포넌트 + TextComponent 추가
+-- 2. TextComponent에 시간 표시 (MM:SS 형식)
+--------------------------------------------------------------------------------
+
+@Component
+script SurvivalTimerUI extends Component
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- 타이머 표시 형식
+    @DisplayName("표시 모드")
+    property string DisplayMode = "MM:SS"
+
+    ----------------------------------------
+    -- 매 프레임 UI 갱신 (클라이언트)
+    ----------------------------------------
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number dt)
+        ---@type GameManagerLogic
+        local gm = _GameManagerLogic
+        if gm == nil then return end
+
+        local elapsed = gm.ElapsedTime
+        local minutes = math.floor(elapsed / 60)
+        local seconds = math.floor(elapsed % 60)
+
+        local timeStr = string.format("%02d:%02d", minutes, seconds)
+
+        -- ※ TextComponent 접근
+        ---@type TextComponent
+        local text = self.Entity.TextComponent
+        if text ~= nil then
+            text.Text = timeStr
+        end
+    end
+
+end

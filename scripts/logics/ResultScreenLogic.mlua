@@ -1,0 +1,121 @@
+--------------------------------------------------------------------------------
+-- ResultScreenLogic.mlua
+-- 게임 종료 시 결과 화면 표시 로직
+--
+-- [메이커 설정]
+-- 1. 이 스크립트를 Logic으로 등록
+-- 2. 결과 UI 패널 엔티티 구성:
+--    - 결과 타이틀 (TextComponent)
+--    - 생존 시간 (TextComponent)
+--    - 킬 수 (TextComponent)
+--    - 최종 레벨 (TextComponent)
+--    - 재시작 버튼 (ButtonComponent)
+--------------------------------------------------------------------------------
+
+@Logic
+script ResultScreenLogic extends Logic
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- 결과 패널 엔티티 ID
+    @DisplayName("결과 패널 ID")
+    property string ResultPanelId = ""
+
+    -- 결과 데이터
+    @Sync
+    property string ResultTitle = ""
+
+    @Sync
+    property number FinalSurvivalTime = 0
+
+    @Sync
+    property number FinalKillCount = 0
+
+    @Sync
+    property number FinalLevel = 0
+
+    @Sync
+    property boolean IsShowing = false
+
+    ----------------------------------------
+    -- 결과 표시
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void ShowResult(string title, number survivalTime, number killCount, number level)
+        self.ResultTitle = title
+        self.FinalSurvivalTime = survivalTime
+        self.FinalKillCount = killCount
+        self.FinalLevel = level
+        self.IsShowing = true
+
+        -- 클라이언트에 UI 표시 명령
+        self:ShowResultUI(title, survivalTime, killCount, level)
+
+        log("[ResultScreen] " .. title)
+        log("  생존 시간: " .. string.format("%02d:%02d", math.floor(survivalTime / 60), math.floor(survivalTime % 60)))
+        log("  킬 수: " .. tostring(killCount))
+        log("  레벨: " .. tostring(level))
+    end
+
+    ----------------------------------------
+    -- 클라이언트 UI 업데이트
+    ----------------------------------------
+
+    @ExecSpace("Client")
+    method void ShowResultUI(string title, number survivalTime, number killCount, number level)
+        -- ※ 결과 패널 표시 + 텍스트 갱신
+        -- local panel = _EntityService:GetEntity(self.ResultPanelId)
+        -- if panel ~= nil then
+        --     panel.Enable = true
+        -- end
+
+        -- 타이틀 설정
+        -- titleText.Text = title
+
+        -- 생존 시간
+        local timeStr = string.format("%02d:%02d", math.floor(survivalTime / 60), math.floor(survivalTime % 60))
+        -- survivalTimeText.Text = "생존 시간: " .. timeStr
+
+        -- 킬 수
+        -- killCountText.Text = "처치 수: " .. tostring(killCount)
+
+        -- 레벨
+        -- levelText.Text = "최종 레벨: " .. tostring(level)
+
+        log("[ResultScreen] UI 표시 (클라이언트)")
+    end
+
+    ----------------------------------------
+    -- 재시작 버튼 핸들러
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void OnRestartClicked()
+        self.IsShowing = false
+        self:HideResultUI()
+
+        -- 게임 재시작
+        ---@type GameManagerLogic
+        local gm = _GameManagerLogic
+        if gm ~= nil then
+            gm:StartGame()
+        end
+    end
+
+    ----------------------------------------
+    -- UI 숨기기
+    ----------------------------------------
+
+    @ExecSpace("Client")
+    method void HideResultUI()
+        -- local panel = _EntityService:GetEntity(self.ResultPanelId)
+        -- if panel ~= nil then
+        --     panel.Enable = false
+        -- end
+        log("[ResultScreen] UI 닫힘")
+    end
+
+end

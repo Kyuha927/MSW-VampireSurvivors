@@ -1,0 +1,98 @@
+--------------------------------------------------------------------------------
+-- ContactDamage.mlua
+-- 접촉 데미지 컴포넌트 - 트리거 영역에 진입한 대상에게 데미지
+--
+-- [메이커 설정]
+-- 1. Enemy 모델에 이 스크립트 컴포넌트 추가
+-- 2. Enemy 엔티티에 TriggerComponent 추가 (충돌 영역 설정)
+-- 3. Player 엔티티에도 TriggerComponent 필요 (피격 판정 영역)
+-- 4. 두 엔티티의 TriggerComponent 충돌 그룹이 서로 감지되도록 설정
+--------------------------------------------------------------------------------
+
+@Component
+script ContactDamage extends Component
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- 접촉 시 데미지량
+    @Sync
+    @DisplayName("접촉 데미지")
+    @Description("대상에게 가하는 데미지량")
+    property number Damage = 10
+
+    -- 데미지 쿨타임 (같은 대상에게 연속 데미지 방지)
+    @DisplayName("데미지 쿨타임")
+    @Description("같은 대상에게 다시 데미지를 줄 수 있는 간격 (초)")
+    property number DamageCooldown = 0.5
+
+    -- 쿨타임 타이머 (내부 사용)
+    property number _cooldownTimer = 0
+
+    -- 데미지를 줄 수 있는 상태인지
+    property boolean _canDamage = true
+
+    ----------------------------------------
+    -- 쿨타임 갱신
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number dt)
+        if not self._canDamage then
+            self._cooldownTimer = self._cooldownTimer - dt
+            if self._cooldownTimer <= 0 then
+                self._canDamage = true
+                self._cooldownTimer = 0
+            end
+        end
+    end
+
+    ----------------------------------------
+    -- 트리거 충돌 시 데미지 처리
+    ----------------------------------------
+
+    -- ※ 이벤트 이름은 MSW 버전에 따라 다를 수 있음
+    -- TriggerEnterEvent, CollisionEnterEvent 등 확인 필요
+    @EventSender("Self")
+    handler OnTriggerEnter(TriggerBodyEnterEvent event)
+        -- 서버에서만 처리
+        if not self:IsServer() then
+            return
+        end
+
+        -- 쿨타임 중이면 무시
+        if not self._canDamage then
+            return
+        end
+
+        -- 충돌한 엔티티 가져오기
+        ---@type Entity
+        local otherEntity = event.Entity
+        -- ※ event의 프로퍼티 이름은 API 확인 필요
+        -- event.OtherEntity, event.TriggerBody 등일 수 있음
+
+        if otherEntity == nil then
+            return
+        end
+
+        -- 자기 자신이면 무시
+        if otherEntity == self.Entity then
+            return
+        end
+
+        -- 대상에게 Health 컴포넌트가 있으면 데미지 적용
+        ---@type Health
+        local targetHealth = otherEntity.Health
+        if targetHealth ~= nil then
+            targetHealth:TakeDamage(self.Damage)
+
+            -- 쿨타임 시작
+            self._canDamage = false
+            self._cooldownTimer = self.DamageCooldown
+
+            log(self.Entity.Name .. " → " .. otherEntity.Name .. " 데미지: " .. tostring(self.Damage))
+        end
+    end
+
+end

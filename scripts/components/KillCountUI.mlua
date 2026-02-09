@@ -1,0 +1,31 @@
+--------------------------------------------------------------------------------
+-- KillCountUI.mlua
+-- 킬 카운트 UI 표시 컴포넌트
+--
+-- [메이커 설정]
+-- 1. UI 엔티티에 이 컴포넌트 + TextComponent 추가
+--------------------------------------------------------------------------------
+
+@Component
+script KillCountUI extends Component
+
+    ----------------------------------------
+    -- 매 프레임 UI 갱신 (클라이언트)
+    ----------------------------------------
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number dt)
+        ---@type GameManagerLogic
+        local gm = _GameManagerLogic
+        if gm == nil then return end
+
+        local killStr = "KILL: " .. tostring(gm.KillCount)
+
+        ---@type TextComponent
+        local text = self.Entity.TextComponent
+        if text ~= nil then
+            text.Text = killStr
+        end
+    end
+
+end

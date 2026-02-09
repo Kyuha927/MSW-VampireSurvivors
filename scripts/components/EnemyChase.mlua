@@ -1,0 +1,79 @@
+--------------------------------------------------------------------------------
+-- EnemyChase.mlua
+-- 적 추적 AI 컴포넌트 - 플레이어를 향해 이동
+--
+-- [메이커 설정]
+-- 1. Enemy 모델(엔티티 템플릿)에 이 스크립트 컴포넌트 추가
+-- 2. Enemy 엔티티에 TransformComponent 필요 (기본 포함)
+-- 3. Enemy 엔티티에 SpriteRendererComponent 추가 (적 스프라이트)
+-- 4. EnemySpawnerLogic이 스폰 시 TargetEntityId 설정
+--------------------------------------------------------------------------------
+
+@Component
+script EnemyChase extends Component
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- 추적 대상(플레이어) 엔티티 ID
+    -- EnemySpawnerLogic에서 스폰 시 설정함
+    @Sync
+    @DisplayName("추적 대상 ID")
+    property string TargetEntityId = ""
+
+    -- 이동 속도 (픽셀/초)
+    @Sync
+    @DisplayName("추적 속도")
+    @Description("적의 이동 속도 (px/s)")
+    property number ChaseSpeed = 80
+
+    ----------------------------------------
+    -- 매 프레임 추적 로직 (Server)
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number dt)
+        -- 추적 대상이 없으면 무시
+        if self.TargetEntityId == "" then
+            return
+        end
+
+        -- 대상 엔티티 찾기
+        ---@type Entity
+        local targetEntity = _EntityService:GetEntity(self.TargetEntityId)
+        -- ※ API가 다를 수 있음. 아래 대안 참고:
+        -- local targetEntity = _EntityService:GetEntityByPath("경로")
+
+        if targetEntity == nil then
+            return
+        end
+
+        -- 내 위치와 대상 위치
+        local myPos = self.Entity.TransformComponent.Position
+        local targetPos = targetEntity.TransformComponent.Position
+
+        -- 방향 계산
+        local dx = targetPos.x - myPos.x
+        local dy = targetPos.y - myPos.y
+        local dist = math.sqrt(dx * dx + dy * dy)
+
+        -- 너무 가까우면 이동하지 않음 (겹침 방지)
+        if dist < 5 then
+            return
+        end
+
+        -- 방향 정규화
+        dx = dx / dist
+        dy = dy / dist
+
+        -- 이동
+        local speed = self.ChaseSpeed * dt
+        self.Entity.TransformComponent.Position = Vector3(
+            myPos.x + dx * speed,
+            myPos.y + dy * speed,
+            myPos.z
+        )
+    end
+
+end

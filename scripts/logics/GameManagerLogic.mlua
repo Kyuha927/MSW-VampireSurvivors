@@ -1,0 +1,291 @@
+--------------------------------------------------------------------------------
+-- GameManagerLogic.mlua
+-- 게임 상태 관리 로직 (전역 싱글톤)
+--
+-- [메이커 설정]
+-- 1. 이 스크립트를 Logic으로 등록
+-- 2. 게임 시작 시 자동으로 초기화됨
+--------------------------------------------------------------------------------
+
+@Logic
+script GameManagerLogic extends Logic
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- 게임 상태: "waiting", "playing", "gameover", "clear"
+    @Sync
+    @DisplayName("게임 상태")
+    property string GameState = "waiting"
+
+    -- 생존 제한 시간 (초) - 0이면 무제한
+    @Sync
+    @DisplayName("제한 시간")
+    @Description("생존 목표 시간 (초). 0 = 무제한")
+    property number TimeLimit = 600
+
+    -- 현재 경과 시간
+    @Sync
+    @DisplayName("경과 시간")
+    property number ElapsedTime = 0
+
+    -- 킬 카운트
+    @Sync
+    @DisplayName("처치 수")
+    property number KillCount = 0
+
+    -- 플레이어 엔티티 ID
+    @Sync
+    property string PlayerEntityId = ""
+
+    ----------------------------------------
+    -- 초기화
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.GameState = "waiting"
+        self.ElapsedTime = 0
+        self.KillCount = 0
+
+        log("[GameManager] 게임 매니저 초기화 완료")
+
+        -- TODO: 플레이어 접속 이벤트와 연결하여 자동으로 게임 시작
+        -- 현재는 수동으로 StartGame() 호출 필요
+    end
+
+    ----------------------------------------
+    -- 매 프레임 갱신
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number dt)
+        if self.GameState ~= "playing" then
+            return
+        end
+
+        -- 경과 시간 갱신
+        self.ElapsedTime = self.ElapsedTime + dt
+
+        -- 제한 시간 체크
+        if self.TimeLimit > 0 and self.ElapsedTime >= self.TimeLimit then
+            self:GameClear()
+            return
+        end
+
+        -- 플레이어 생존 체크
+        self:CheckPlayerAlive()
+    end
+
+    ----------------------------------------
+    -- 게임 시작
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void StartGame(string playerEntityId)
+        if self.GameState == "playing" then
+            return
+        end
+
+        self.PlayerEntityId = playerEntityId
+        self.GameState = "playing"
+        self.ElapsedTime = 0
+        self.KillCount = 0
+
+        -- 적 스포너 활성화
+        ---@type EnemySpawnerLogic
+        local enemySpawner = _EnemySpawnerLogic
+        if enemySpawner ~= nil then
+            enemySpawner.PlayerEntityId = playerEntityId
+            enemySpawner:StartSpawning()
+        end
+
+        -- 보스 스포너 활성화
+        ---@type BossSpawnerLogic
+        local bossSpawner = _BossSpawnerLogic
+        if bossSpawner ~= nil then
+            bossSpawner:Activate(playerEntityId)
+        end
+
+        -- 필드 아이템 스포너 활성화
+        ---@type FieldItemSpawnerLogic
+        local itemSpawner = _FieldItemSpawnerLogic
+        if itemSpawner ~= nil then
+            itemSpawner:Activate(playerEntityId)
+        end
+
+        -- 무기 매니저에 플레이어 설정 + 기본 무기(쿠나이) 지급
+        ---@type WeaponManagerLogic
+        local weaponMgr = _WeaponManagerLogic
+        if weaponMgr ~= nil then
+            weaponMgr.PlayerEntityId = playerEntityId
+            weaponMgr:AddOrUpgradeWeapon("kunai")
+        end
+
+        log("[GameManager] 게임 시작! Player: " .. playerEntityId)
+    end
+
+    ----------------------------------------
+    -- 게임 오버
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void GameOver()
+        if self.GameState ~= "playing" then
+            return
+        end
+
+        self.GameState = "gameover"
+
+        -- 모든 스포너 중지
+        self:StopAllSpawners()
+
+        log("[GameManager] 게임 오버! 생존 시간: " .. tostring(math.floor(self.ElapsedTime))
+            .. "초, 처치수: " .. tostring(self.KillCount))
+
+        -- 결과 화면 표시
+        self:ShowResult()
+    end
+
+    ----------------------------------------
+    -- 게임 클리어
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void GameClear()
+        if self.GameState ~= "playing" then
+            return
+        end
+
+        self.GameState = "clear"
+
+        -- 모든 스포너 중지
+        self:StopAllSpawners()
+
+        log("[GameManager] 게임 클리어! 처치수: " .. tostring(self.KillCount))
+
+        -- 결과 화면 표시
+        self:ShowResult()
+    end
+
+    ----------------------------------------
+    -- 플레이어 생존 체크
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void CheckPlayerAlive()
+        if self.PlayerEntityId == "" then
+            return
+        end
+
+        ---@type Entity
+        local playerEntity = _EntityService:GetEntity(self.PlayerEntityId)
+        if playerEntity == nil then
+            self:GameOver()
+            return
+        end
+
+        ---@type Health
+        local health = playerEntity.Health
+        if health ~= nil and not health.IsAlive then
+            self:GameOver()
+        end
+    end
+
+    ----------------------------------------
+    -- 킬 카운트 증가 (외부에서 호출)
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void AddKill()
+        self.KillCount = self.KillCount + 1
+    end
+
+    ----------------------------------------
+    -- 결과 표시
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void ShowResult()
+        local title = "게임 오버"
+        if self.GameState == "clear" then
+            title = "게임 클리어!"
+        end
+
+        -- 플레이어 레벨 가져오기
+        local level = 1
+        if self.PlayerEntityId ~= "" then
+            ---@type Entity
+            local player = _EntityService:GetEntity(self.PlayerEntityId)
+            if player ~= nil then
+                ---@type LevelSystem
+                local ls = player.LevelSystem
+                if ls ~= nil then
+                    level = ls.CurrentLevel
+                end
+            end
+        end
+
+        -- ResultScreenLogic에 위임
+        ---@type ResultScreenLogic
+        local resultScreen = _ResultScreenLogic
+        if resultScreen ~= nil then
+            resultScreen:ShowResult(title, self.ElapsedTime, self.KillCount, level)
+        else
+            -- 폴백: 로그 출력
+            local minutes = math.floor(self.ElapsedTime / 60)
+            local seconds = math.floor(self.ElapsedTime % 60)
+            log("========== 결과 ==========")
+            log("상태: " .. self.GameState)
+            log("생존 시간: " .. tostring(minutes) .. "분 " .. tostring(seconds) .. "초")
+            log("처치 수: " .. tostring(self.KillCount))
+            log("===========================")
+        end
+    end
+
+    ----------------------------------------
+    -- 모든 스포너 중지
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void StopAllSpawners()
+        ---@type EnemySpawnerLogic
+        local enemySpawner = _EnemySpawnerLogic
+        if enemySpawner ~= nil then
+            enemySpawner:StopSpawning()
+        end
+
+        ---@type BossSpawnerLogic
+        local bossSpawner = _BossSpawnerLogic
+        if bossSpawner ~= nil then
+            bossSpawner:Deactivate()
+        end
+
+        ---@type FieldItemSpawnerLogic
+        local itemSpawner = _FieldItemSpawnerLogic
+        if itemSpawner ~= nil then
+            itemSpawner:Deactivate()
+        end
+    end
+    end
+
+    ----------------------------------------
+    -- 포맷된 시간 반환 (UI용)
+    ----------------------------------------
+
+    method string GetFormattedTime()
+        local remaining = self.TimeLimit - self.ElapsedTime
+        if remaining < 0 then remaining = 0 end
+
+        local minutes = math.floor(remaining / 60)
+        local seconds = math.floor(remaining % 60)
+
+        if seconds < 10 then
+            return tostring(minutes) .. ":0" .. tostring(seconds)
+        else
+            return tostring(minutes) .. ":" .. tostring(seconds)
+        end
+    end
+
+end

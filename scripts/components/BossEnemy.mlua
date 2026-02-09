@@ -1,0 +1,197 @@
+--------------------------------------------------------------------------------
+-- BossEnemy.mlua
+-- 보스 전용 컴포넌트 - 큰 체력, 특수 행동 패턴
+--
+-- [메이커 설정]
+-- 1. Boss 엔티티에 이 컴포넌트 + Health + EnemyChase 추가
+-- 2. TriggerComponent (충돌 영역 크게)
+-- 3. SpriteRendererComponent (보스 스프라이트)
+-- 4. Model로 등록
+--------------------------------------------------------------------------------
+
+@Component
+script BossEnemy extends Component
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- 보스 이름
+    @Sync
+    @DisplayName("보스 이름")
+    property string BossName = "보스"
+
+    -- 보스 유형 ("charge", "summon", "aoe")
+    @DisplayName("보스 유형")
+    property string BossType = "charge"
+
+    -- 특수 행동 쿨타임
+    @DisplayName("특수 행동 쿨타임")
+    property number SpecialCooldown = 5.0
+
+    -- 접촉 데미지
+    @DisplayName("접촉 데미지")
+    property number ContactDamage = 30
+
+    -- EXP 보상
+    @DisplayName("EXP 보상")
+    property number ExpReward = 100
+
+    ----------------------------------------
+    -- Internal
+    ----------------------------------------
+
+    property number _specialTimer = 0
+    property boolean _isCharging = false
+    property number _chargeTimer = 0
+    property number _originalSpeed = 0
+
+    ----------------------------------------
+    -- 초기화
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self._specialTimer = self.SpecialCooldown
+        log("[BossEnemy] " .. self.BossName .. " 출현!")
+    end
+
+    ----------------------------------------
+    -- 매 프레임 특수 행동 체크
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number dt)
+        self._specialTimer = self._specialTimer - dt
+
+        -- 돌진 중 처리
+        if self._isCharging then
+            self._chargeTimer = self._chargeTimer - dt
+            if self._chargeTimer <= 0 then
+                self._isCharging = false
+                -- 원래 속도로 복구
+                ---@type EnemyChase
+                local chase = self.Entity.EnemyChase
+                if chase ~= nil then
+                    chase.Speed = self._originalSpeed
+                end
+            end
+        end
+
+        if self._specialTimer <= 0 then
+            self:DoSpecialAction()
+            self._specialTimer = self.SpecialCooldown
+        end
+    end
+
+    ----------------------------------------
+    -- 특수 행동
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void DoSpecialAction()
+        if self.BossType == "charge" then
+            self:DoCharge()
+        elseif self.BossType == "summon" then
+            self:DoSummon()
+        elseif self.BossType == "aoe" then
+            self:DoAoE()
+        end
+    end
+
+    ----------------------------------------
+    -- 돌진 공격
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void DoCharge()
+        ---@type EnemyChase
+        local chase = self.Entity.EnemyChase
+        if chase ~= nil then
+            self._originalSpeed = chase.Speed
+            chase.Speed = chase.Speed * 3  -- 3배 속도
+            self._isCharging = true
+            self._chargeTimer = 1.0 -- 1초간 돌진
+        end
+        log("[BossEnemy] " .. self.BossName .. " 돌진!")
+    end
+
+    ----------------------------------------
+    -- 소환 (주변에 일반 적 추가 스폰)
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void DoSummon()
+        ---@type EnemySpawnerLogic
+        local spawner = _EnemySpawnerLogic
+        if spawner ~= nil then
+            local pos = self.Entity.TransformComponent.Position
+            for i = 1, 5 do
+                local angle = (2 * math.pi / 5) * i
+                local sx = pos.x + math.cos(angle) * 100
+                local sy = pos.y + math.sin(angle) * 100
+                -- TODO: 스포너를 통해 특정 위치에 적 생성
+            end
+        end
+        log("[BossEnemy] " .. self.BossName .. " 소환!")
+    end
+
+    ----------------------------------------
+    -- 범위 공격 (주변 피해)
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void DoAoE()
+        -- TODO: 플레이어가 일정 범위 내에 있으면 대미지
+        ---@type EnemyChase
+        local chase = self.Entity.EnemyChase
+        if chase ~= nil and chase.TargetEntityId ~= "" then
+            ---@type Entity
+            local target = _EntityService:GetEntity(chase.TargetEntityId)
+            if target ~= nil then
+                local myPos = self.Entity.TransformComponent.Position
+                local tPos = target.TransformComponent.Position
+                local dx = tPos.x - myPos.x
+                local dy = tPos.y - myPos.y
+                local dist = math.sqrt(dx * dx + dy * dy)
+                if dist < 300 then
+                    ---@type Health
+                    local hp = target.Health
+                    if hp ~= nil then
+                        hp:TakeDamage(self.ContactDamage)
+                    end
+                end
+            end
+        end
+        log("[BossEnemy] " .. self.BossName .. " 범위 공격!")
+    end
+
+    ----------------------------------------
+    -- 보스 사망 처리 (Health Die()에서 호출되기 전에)
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnBossDeath()
+        log("[BossEnemy] " .. self.BossName .. " 처치!")
+
+        -- EXP 보석 대량 드랍
+        ---@type ExpGemSpawnerLogic
+        local gemSpawner = _ExpGemSpawnerLogic
+        if gemSpawner ~= nil then
+            local pos = self.Entity.TransformComponent.Position
+            for i = 1, 10 do
+                local ox = pos.x + (math.random() - 0.5) * 100
+                local oy = pos.y + (math.random() - 0.5) * 100
+                -- TODO: gemSpawner:SpawnGemAt(Vector3(ox, oy, pos.z), "boss_gem")
+            end
+        end
+
+        -- 게임매니저에 보스 처치 알림
+        ---@type GameManagerLogic
+        local gm = _GameManagerLogic
+        if gm ~= nil then
+            -- 필요 시 게임 클리어 조건 체크
+        end
+    end
+
+end

@@ -1,0 +1,150 @@
+--------------------------------------------------------------------------------
+-- BossSpawnerLogic.mlua
+-- 보스 스폰 관리 로직 - 일정 시간마다 보스 출현
+--
+-- [메이커 설정]
+-- 1. 이 스크립트를 Logic으로 등록
+-- 2. 보스 Model ID 설정
+--------------------------------------------------------------------------------
+
+@Logic
+script BossSpawnerLogic extends Logic
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- 보스 스폰 시간 간격 (초)
+    @DisplayName("보스 스폰 간격")
+    property number BossInterval = 60.0
+
+    -- 보스 모델 ID 목록 (순서대로 출현)
+    @DisplayName("보스1 모델 ID")
+    property string Boss1ModelId = ""
+
+    @DisplayName("보스2 모델 ID")
+    property string Boss2ModelId = ""
+
+    @DisplayName("보스3 모델 ID")
+    property string Boss3ModelId = ""
+
+    -- 보스 체력 배수 (게임 시간이 지날수록 강해짐)
+    @DisplayName("보스 체력 증가율")
+    property number HpMultiplier = 1.5
+
+    ----------------------------------------
+    -- Internal
+    ----------------------------------------
+
+    property number _timer = 0
+    property number _bossCount = 0
+    property boolean _isActive = false
+    property string _playerEntityId = ""
+
+    ----------------------------------------
+    -- 시작
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self._isActive = false
+    end
+
+    ----------------------------------------
+    -- 활성화
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void Activate(string playerEntityId)
+        self._playerEntityId = playerEntityId
+        self._isActive = true
+        self._timer = self.BossInterval
+        self._bossCount = 0
+        log("[BossSpawner] 활성화, " .. tostring(self.BossInterval) .. "초 후 첫 보스")
+    end
+
+    ----------------------------------------
+    -- 매 프레임 타이머 체크
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number dt)
+        if not self._isActive then return end
+        if self._playerEntityId == "" then return end
+
+        self._timer = self._timer - dt
+
+        if self._timer <= 0 then
+            self:SpawnBoss()
+            self._timer = self.BossInterval
+        end
+    end
+
+    ----------------------------------------
+    -- 보스 스폰
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void SpawnBoss()
+        self._bossCount = self._bossCount + 1
+
+        -- 모델 ID 선택 (순환)
+        local modelId = self.Boss1ModelId
+        local bossIdx = ((self._bossCount - 1) % 3) + 1
+        if bossIdx == 2 and self.Boss2ModelId ~= "" then
+            modelId = self.Boss2ModelId
+        elseif bossIdx == 3 and self.Boss3ModelId ~= "" then
+            modelId = self.Boss3ModelId
+        end
+
+        if modelId == "" then
+            log("[BossSpawner] 보스 모델 ID가 설정되지 않음")
+            return
+        end
+
+        -- 플레이어 위치에서 일정 거리에 스폰
+        ---@type Entity
+        local player = _EntityService:GetEntity(self._playerEntityId)
+        if player == nil then return end
+
+        local pPos = player.TransformComponent.Position
+        local angle = math.random() * 2 * math.pi
+        local spawnDist = 600
+        local sx = pPos.x + math.cos(angle) * spawnDist
+        local sy = pPos.y + math.sin(angle) * spawnDist
+
+        local bossName = "Boss_" .. tostring(self._bossCount)
+        ---@type Entity
+        local boss = _SpawnService:SpawnByModelId(modelId, bossName, Vector3(sx, sy, pPos.z), nil)
+
+        if boss ~= nil then
+            -- 체력 강화
+            ---@type Health
+            local hp = boss.Health
+            if hp ~= nil then
+                local newMaxHp = math.floor(hp.MaxHP * (self.HpMultiplier ^ (self._bossCount - 1)))
+                hp.MaxHP = newMaxHp
+                hp.CurrentHP = newMaxHp
+            end
+
+            -- 추적 대상 설정
+            ---@type EnemyChase
+            local chase = boss.EnemyChase
+            if chase ~= nil then
+                chase.TargetEntityId = self._playerEntityId
+            end
+
+            log("[BossSpawner] 보스 #" .. tostring(self._bossCount) .. " 출현! HP=" .. tostring(boss.Health.MaxHP))
+        end
+    end
+
+    ----------------------------------------
+    -- 비활성화
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void Deactivate()
+        self._isActive = false
+    end
+
+end

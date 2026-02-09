@@ -1,0 +1,387 @@
+--------------------------------------------------------------------------------
+-- WeaponManagerLogic.mlua
+-- 무기 슬롯 관리 + 무기별 공격 실행 로직
+--
+-- [메이커 설정]
+-- 1. 이 스크립트를 Logic으로 등록
+-- 2. 각 무기 타입별 투사체 Model을 등록하고 ID 설정
+--------------------------------------------------------------------------------
+
+@Logic
+script WeaponManagerLogic extends Logic
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- 투사체 모델 ID (무기 타입별)
+    @DisplayName("쿠나이 모델 ID")
+    property string KunaiModelId = ""
+
+    @DisplayName("구체 모델 ID")
+    property string OrbModelId = ""
+
+    @DisplayName("도끼 모델 ID")
+    property string AxeModelId = ""
+
+    @DisplayName("오라 모델 ID")
+    property string AuraModelId = ""
+
+    @DisplayName("번개 모델 ID")
+    property string LightningModelId = ""
+
+    -- 최대 보유 무기 수
+    @DisplayName("최대 무기 슬롯")
+    property number MaxWeaponSlots = 6
+
+    -- 플레이어 엔티티 ID
+    property string PlayerEntityId = ""
+
+    ----------------------------------------
+    -- 플레이어별 무기 데이터 (서버)
+    -- { weaponId = level, ... }
+    ----------------------------------------
+
+    property table _playerWeapons = {}
+
+    -- 무기별 쿨타임 타이머
+    property table _cooldownTimers = {}
+
+    ----------------------------------------
+    -- 초기화
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self._playerWeapons = {}
+        self._cooldownTimers = {}
+        log("[WeaponManager] 초기화 완료")
+    end
+
+    ----------------------------------------
+    -- 매 프레임 - 각 무기의 자동 공격 실행
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number dt)
+        if self.PlayerEntityId == "" then
+            return
+        end
+
+        ---@type Entity
+        local playerEntity = _EntityService:GetEntity(self.PlayerEntityId)
+        if playerEntity == nil then
+            return
+        end
+
+        ---@type PlayerStats
+        local stats = playerEntity.PlayerStats
+        local cdMult = 1.0
+        local dmgMult = 1.0
+        local areaMult = 1.0
+        if stats ~= nil then
+            cdMult = stats.CooldownMult
+            dmgMult = stats.DamageMult
+            areaMult = stats.AreaMult
+        end
+
+        local playerPos = playerEntity.TransformComponent.Position
+
+        -- 보유 무기 순회
+        for weaponId, level in pairs(self._playerWeapons) do
+            -- 쿨타임 감소
+            if self._cooldownTimers[weaponId] == nil then
+                self._cooldownTimers[weaponId] = 0
+            end
+            self._cooldownTimers[weaponId] = self._cooldownTimers[weaponId] - dt
+
+            if self._cooldownTimers[weaponId] <= 0 then
+                -- 무기별 공격 실행
+                self:FireWeapon(weaponId, level, playerEntity, playerPos, dmgMult, areaMult)
+
+                -- 쿨타임 리셋
+                local baseCd = self:GetWeaponCooldown(weaponId, level)
+                self._cooldownTimers[weaponId] = baseCd * cdMult
+            end
+        end
+    end
+
+    ----------------------------------------
+    -- 무기 추가/레벨업
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method boolean AddOrUpgradeWeapon(string weaponId)
+        local currentLevel = 0
+        if self._playerWeapons[weaponId] ~= nil then
+            currentLevel = self._playerWeapons[weaponId]
+        end
+
+        -- 이미 최대 레벨
+        if currentLevel >= 8 then
+            return false
+        end
+
+        -- 새 무기인데 슬롯이 가득 찬 경우
+        if currentLevel == 0 then
+            local weaponCount = 0
+            for _ in pairs(self._playerWeapons) do
+                weaponCount = weaponCount + 1
+            end
+            if weaponCount >= self.MaxWeaponSlots then
+                return false
+            end
+        end
+
+        self._playerWeapons[weaponId] = currentLevel + 1
+        self._cooldownTimers[weaponId] = 0 -- 획득 즉시 발사 가능
+
+        log("[WeaponManager] 무기 " .. weaponId .. " Lv." .. tostring(currentLevel + 1))
+        return true
+    end
+
+    ----------------------------------------
+    -- 무기별 공격 실행
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void FireWeapon(string weaponId, number level, Entity player, Vector3 pos, number dmgMult, number areaMult)
+        if weaponId == "kunai" then
+            self:FireKunai(level, player, pos, dmgMult, areaMult)
+        elseif weaponId == "orb" then
+            self:FireOrb(level, player, pos, dmgMult, areaMult)
+        elseif weaponId == "axe" then
+            self:FireAxe(level, player, pos, dmgMult, areaMult)
+        elseif weaponId == "aura" then
+            self:FireAura(level, player, pos, dmgMult, areaMult)
+        elseif weaponId == "lightning" then
+            self:FireLightning(level, player, pos, dmgMult, areaMult)
+        end
+    end
+
+    ----------------------------------------
+    -- 쿠나이: 가장 가까운 적 방향으로 직선 투사체
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void FireKunai(number level, Entity player, Vector3 pos, number dmgMult, number areaMult)
+        if self.KunaiModelId == "" then return end
+
+        local countTable = {1, 1, 2, 2, 3, 3, 4, 5}
+        local pierceTable = {0, 0, 0, 1, 1, 1, 2, 3}
+        local count = countTable[level] or 1
+        local pierce = pierceTable[level] or 0
+        local damage = math.floor((10 + 5 * (level - 1)) * dmgMult)
+
+        -- 방향: 가장 가까운 적 또는 마지막 이동 방향
+        local dirX = 1
+        local dirY = 0
+        ---@type PlayerMovement
+        local movement = player.PlayerMovement
+        if movement ~= nil then
+            dirX = movement.LastDirX
+            dirY = movement.LastDirY
+        end
+
+        local baseAngle = math.atan(dirY, dirX)
+        local spreadAngle = math.rad(15)
+
+        if count <= 1 then
+            self:SpawnProjectileGeneric(self.KunaiModelId, pos, dirX, dirY, 400, damage, 2.0, pierce, areaMult)
+        else
+            local startAngle = baseAngle - spreadAngle * (count - 1) / 2
+            for i = 0, count - 1 do
+                local angle = startAngle + spreadAngle * i
+                self:SpawnProjectileGeneric(self.KunaiModelId, pos, math.cos(angle), math.sin(angle), 400, damage, 2.0, pierce, areaMult)
+            end
+        end
+    end
+
+    ----------------------------------------
+    -- 회전 구체: 플레이어 주위를 회전
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void FireOrb(number level, Entity player, Vector3 pos, number dmgMult, number areaMult)
+        if self.OrbModelId == "" then return end
+
+        local countTable = {1, 2, 2, 3, 3, 4, 4, 5}
+        local count = countTable[level] or 1
+        local damage = math.floor((15 + 7 * (level - 1)) * dmgMult)
+
+        -- 기존 구체 제거하고 새로 생성 (레벨업 시)
+        -- TODO: 기존 구체 Destroy 처리
+
+        local radius = 100 * areaMult
+        for i = 0, count - 1 do
+            local angle = (2 * math.pi / count) * i
+            local ox = pos.x + math.cos(angle) * radius
+            local oy = pos.y + math.sin(angle) * radius
+
+            local orbName = "Orb_" .. tostring(math.random(10000, 99999))
+            ---@type Entity
+            local orb = _SpawnService:SpawnByModelId(self.OrbModelId, orbName, Vector3(ox, oy, pos.z), nil)
+            if orb ~= nil then
+                ---@type OrbBehavior
+                local orbComp = orb.OrbBehavior
+                if orbComp ~= nil then
+                    orbComp.CenterEntityId = player.Id
+                    orbComp.OrbitRadius = radius
+                    orbComp.StartAngle = angle
+                    orbComp.Damage = damage
+                end
+            end
+        end
+    end
+
+    ----------------------------------------
+    -- 도끼: 위로 포물선 궤적
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void FireAxe(number level, Entity player, Vector3 pos, number dmgMult, number areaMult)
+        if self.AxeModelId == "" then return end
+
+        local countTable = {1, 1, 2, 2, 2, 3, 3, 4}
+        local count = countTable[level] or 1
+        local damage = math.floor((25 + 10 * (level - 1)) * dmgMult)
+
+        for i = 1, count do
+            -- 약간의 랜덤 좌우 오프셋
+            local offsetX = (math.random() - 0.5) * 100
+            self:SpawnProjectileGeneric(self.AxeModelId, pos, offsetX / 100, 1, 300, damage, 3.0, -1, areaMult)
+        end
+    end
+
+    ----------------------------------------
+    -- 오라: 주변 범위 데미지
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void FireAura(number level, Entity player, Vector3 pos, number dmgMult, number areaMult)
+        if self.AuraModelId == "" then return end
+
+        local damage = math.floor((5 + 3 * (level - 1)) * dmgMult)
+        local auraScale = (1.0 + 0.15 * (level - 1)) * areaMult
+
+        local auraName = "Aura_" .. tostring(math.random(10000, 99999))
+        ---@type Entity
+        local aura = _SpawnService:SpawnByModelId(self.AuraModelId, auraName, pos, nil)
+        if aura ~= nil then
+            ---@type Projectile
+            local proj = aura.Projectile
+            if proj ~= nil then
+                proj.DirX = 0
+                proj.DirY = 0
+                proj.Speed = 0
+                proj.Damage = damage
+                proj.Lifetime = 0.3
+                proj.PierceCount = -1
+            end
+            aura.TransformComponent.Scale = Vector3(auraScale, auraScale, 1)
+        end
+    end
+
+    ----------------------------------------
+    -- 번개: 랜덤 적 위치에 즉발
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void FireLightning(number level, Entity player, Vector3 pos, number dmgMult, number areaMult)
+        if self.LightningModelId == "" then return end
+
+        local countTable = {1, 1, 2, 2, 3, 3, 4, 5}
+        local count = countTable[level] or 1
+        local damage = math.floor((30 + 15 * (level - 1)) * dmgMult)
+
+        -- TODO: 랜덤 적을 찾아서 그 위치에 번개 스폰
+        -- 현재는 플레이어 주변 랜덤 위치에 스폰
+        for i = 1, count do
+            local rx = pos.x + (math.random() - 0.5) * 600
+            local ry = pos.y + (math.random() - 0.5) * 600
+
+            local name = "Lightning_" .. tostring(math.random(10000, 99999))
+            ---@type Entity
+            local bolt = _SpawnService:SpawnByModelId(self.LightningModelId, name, Vector3(rx, ry, pos.z), nil)
+            if bolt ~= nil then
+                ---@type Projectile
+                local proj = bolt.Projectile
+                if proj ~= nil then
+                    proj.DirX = 0
+                    proj.DirY = 0
+                    proj.Speed = 0
+                    proj.Damage = damage
+                    proj.Lifetime = 0.5
+                    proj.PierceCount = -1
+                end
+                local scale = 1.5 * areaMult
+                bolt.TransformComponent.Scale = Vector3(scale, scale, 1)
+            end
+        end
+    end
+
+    ----------------------------------------
+    -- 범용 투사체 스폰 헬퍼
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void SpawnProjectileGeneric(string modelId, Vector3 pos, number dirX, number dirY, number speed, number damage, number lifetime, number pierce, number areaMult)
+        local name = "Proj_" .. tostring(math.random(10000, 99999))
+
+        ---@type Entity
+        local proj = _SpawnService:SpawnByModelId(modelId, name, pos, nil)
+        if proj ~= nil then
+            ---@type Projectile
+            local projComp = proj.Projectile
+            if projComp ~= nil then
+                projComp.DirX = dirX
+                projComp.DirY = dirY
+                projComp.Speed = speed
+                projComp.Damage = damage
+                projComp.Lifetime = lifetime
+                projComp.PierceCount = pierce
+            end
+            if areaMult ~= 1.0 then
+                proj.TransformComponent.Scale = Vector3(areaMult, areaMult, 1)
+            end
+        end
+    end
+
+    ----------------------------------------
+    -- 무기 쿨타임 조회
+    ----------------------------------------
+
+    method number GetWeaponCooldown(string weaponId, number level)
+        if weaponId == "kunai" then return math.max(0.2, 1.0 - 0.05 * (level - 1))
+        elseif weaponId == "orb" then return 999  -- 회전구체는 상시
+        elseif weaponId == "axe" then return math.max(0.5, 2.0 - 0.1 * (level - 1))
+        elseif weaponId == "aura" then return math.max(0.15, 0.5 - 0.03 * (level - 1))
+        elseif weaponId == "lightning" then return math.max(0.5, 3.0 - 0.15 * (level - 1))
+        end
+        return 1.0
+    end
+
+    ----------------------------------------
+    -- 보유 무기 수 반환
+    ----------------------------------------
+
+    method number GetWeaponCount()
+        local count = 0
+        for _ in pairs(self._playerWeapons) do
+            count = count + 1
+        end
+        return count
+    end
+
+    ----------------------------------------
+    -- 특정 무기 레벨 반환
+    ----------------------------------------
+
+    method number GetWeaponLevel(string weaponId)
+        if self._playerWeapons[weaponId] ~= nil then
+            return self._playerWeapons[weaponId]
+        end
+        return 0
+    end
+
+end

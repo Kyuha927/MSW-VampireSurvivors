@@ -1,0 +1,145 @@
+--------------------------------------------------------------------------------
+-- LevelSystem.mlua
+-- 레벨 시스템 컴포넌트 - 경험치 획득 → 레벨업
+--
+-- [메이커 설정]
+-- 1. Player 엔티티에 이 스크립트 컴포넌트 추가
+-- 2. 레벨업 시 LevelUpUI(Phase 3)와 연동 예정
+--------------------------------------------------------------------------------
+
+@Component
+script LevelSystem extends Component
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- 현재 레벨
+    @Sync
+    @DisplayName("현재 레벨")
+    property integer CurrentLevel = 1
+
+    -- 현재 경험치
+    @Sync
+    @DisplayName("현재 경험치")
+    property number CurrentExp = 0
+
+    -- 다음 레벨까지 필요 경험치 (현재 값)
+    @Sync
+    @DisplayName("필요 경험치")
+    property number RequiredExp = 20
+
+    -- 레벨당 필요 경험치 증가 배율
+    @DisplayName("경험치 증가율")
+    @Description("레벨업 시 필요 경험치가 이 배율로 증가")
+    property number ExpGrowthRate = 1.3
+
+    -- 레벨업 대기 여부 (선택지 UI 표시 중)
+    @Sync
+    property boolean IsLevelUpPending = false
+
+    -- 누적 경험치 (통계용)
+    @Sync
+    property number TotalExpGained = 0
+
+    ----------------------------------------
+    -- 초기화
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.CurrentLevel = 1
+        self.CurrentExp = 0
+        self.RequiredExp = 20
+        self.TotalExpGained = 0
+        self.IsLevelUpPending = false
+    end
+
+    ----------------------------------------
+    -- 경험치 획득
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void AddExp(number amount)
+        if self.IsLevelUpPending then
+            -- 레벨업 선택 중이면 경험치를 모아둠
+            self.CurrentExp = self.CurrentExp + amount
+            self.TotalExpGained = self.TotalExpGained + amount
+            return
+        end
+
+        self.CurrentExp = self.CurrentExp + amount
+        self.TotalExpGained = self.TotalExpGained + amount
+
+        -- 레벨업 체크 (여러 레벨 한번에 오를 수 있음)
+        while self.CurrentExp >= self.RequiredExp do
+            self:LevelUp()
+        end
+    end
+
+    ----------------------------------------
+    -- 레벨업 처리
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void LevelUp()
+        -- 남은 경험치 이월
+        self.CurrentExp = self.CurrentExp - self.RequiredExp
+
+        -- 레벨 증가
+        self.CurrentLevel = self.CurrentLevel + 1
+
+        -- 다음 레벨 필요 경험치 계산
+        self.RequiredExp = math.floor(self.RequiredExp * self.ExpGrowthRate)
+
+        -- 레벨업 선택 대기 상태
+        self.IsLevelUpPending = true
+
+        log("[LevelSystem] 레벨 업! Lv." .. tostring(self.CurrentLevel)
+            .. " | 다음 필요 EXP: " .. tostring(self.RequiredExp))
+
+        -- 레벨업 선택지 UI 표시 요청 (Phase 3에서 구현)
+        self:OnLevelUpReady()
+    end
+
+    ----------------------------------------
+    -- 레벨업 선택지 UI 표시 (Phase 3에서 구현)
+    ----------------------------------------
+
+    @ExecSpace("Multicast")
+    method void OnLevelUpReady()
+        -- TODO: Phase 3에서 레벨업 UI 표시
+        -- _LevelUpUILogic:Show(self.CurrentLevel)
+        log("[LevelSystem] 레벨업 선택지를 표시합니다... (Phase 3)")
+
+        -- ※ 현재는 자동으로 선택 완료 처리 (테스트용)
+        -- Phase 3에서 UI로 교체
+        self:ConfirmLevelUp()
+    end
+
+    ----------------------------------------
+    -- 레벨업 선택 완료 (UI에서 호출)
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void ConfirmLevelUp()
+        self.IsLevelUpPending = false
+
+        -- 혹시 모인 경험치로 또 레벨업 가능한지 체크
+        while self.CurrentExp >= self.RequiredExp do
+            self:LevelUp()
+        end
+    end
+
+    ----------------------------------------
+    -- 현재 경험치 비율 반환 (0.0 ~ 1.0, UI 바용)
+    ----------------------------------------
+
+    method number GetExpRatio()
+        if self.RequiredExp <= 0 then
+            return 0
+        end
+        return self.CurrentExp / self.RequiredExp
+    end
+
+end

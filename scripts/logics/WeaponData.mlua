@@ -1,0 +1,131 @@
+--------------------------------------------------------------------------------
+-- WeaponData.mlua
+-- 무기 데이터 정의 - 모든 무기의 스펙을 관리
+--
+-- [용도] 
+-- WeaponManagerLogic에서 참조하여 레벨업 선택지 생성
+-- AutoAttack에 스탯 적용
+--------------------------------------------------------------------------------
+
+@Logic
+script WeaponData extends Logic
+
+    ----------------------------------------
+    -- 무기 목록 정의
+    -- 각 무기는 테이블로 관리
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        -- 무기 데이터는 GetWeaponById()에서 하드코딩으로 반환
+        log("[WeaponData] 무기 데이터 로드 완료")
+    end
+
+    ----------------------------------------
+    -- 무기 ID로 기본 스펙 반환
+    ----------------------------------------
+
+    method table GetWeaponById(string weaponId)
+        -- ※ MSW에서는 Dataset을 쓸 수도 있지만 스크립트에서 직접 정의
+
+        if weaponId == "kunai" then
+            return {
+                id = "kunai",
+                name = "쿠나이",
+                description = "전방에 빠른 투사체를 발사합니다.",
+                maxLevel = 8,
+                baseDamage = 10,
+                baseCooldown = 1.0,
+                baseSpeed = 400,
+                baseCount = 1,
+                basePierce = 0,
+                baseLifetime = 2.0,
+                -- 레벨당 증가량
+                damagePerLevel = 5,
+                cooldownPerLevel = -0.05,
+                countAtLevel = {1, 1, 2, 2, 3, 3, 4, 5}, -- 레벨별 발사 수
+                pierceAtLevel = {0, 0, 0, 1, 1, 1, 2, 3}
+            }
+        elseif weaponId == "orb" then
+            return {
+                id = "orb",
+                name = "회전 구체",
+                description = "캐릭터 주위를 회전하는 구체입니다.",
+                maxLevel = 8,
+                baseDamage = 15,
+                baseCooldown = 0,
+                baseSpeed = 0,
+                baseCount = 1,
+                basePierce = -1, -- 무한 관통
+                baseLifetime = 999,
+                damagePerLevel = 7,
+                cooldownPerLevel = 0,
+                countAtLevel = {1, 2, 2, 3, 3, 4, 4, 5},
+                pierceAtLevel = {-1, -1, -1, -1, -1, -1, -1, -1}
+            }
+        elseif weaponId == "axe" then
+            return {
+                id = "axe",
+                name = "도끼",
+                description = "위로 던져진 뒤 포물선으로 떨어지는 도끼입니다.",
+                maxLevel = 8,
+                baseDamage = 25,
+                baseCooldown = 2.0,
+                baseSpeed = 300,
+                baseCount = 1,
+                basePierce = -1,
+                baseLifetime = 3.0,
+                damagePerLevel = 10,
+                cooldownPerLevel = -0.1,
+                countAtLevel = {1, 1, 2, 2, 2, 3, 3, 4},
+                pierceAtLevel = {-1, -1, -1, -1, -1, -1, -1, -1}
+            }
+        elseif weaponId == "aura" then
+            return {
+                id = "aura",
+                name = "오라",
+                description = "주변 적에게 지속적으로 데미지를 줍니다.",
+                maxLevel = 8,
+                baseDamage = 5,
+                baseCooldown = 0.5,
+                baseSpeed = 0,
+                baseCount = 1,
+                basePierce = -1,
+                baseLifetime = 0.3,
+                damagePerLevel = 3,
+                cooldownPerLevel = -0.03,
+                countAtLevel = {1, 1, 1, 1, 1, 1, 1, 1},
+                pierceAtLevel = {-1, -1, -1, -1, -1, -1, -1, -1}
+            }
+        elseif weaponId == "lightning" then
+            return {
+                id = "lightning",
+                name = "번개",
+                description = "랜덤한 적에게 번개를 떨어뜨립니다.",
+                maxLevel = 8,
+                baseDamage = 30,
+                baseCooldown = 3.0,
+                baseSpeed = 0,
+                baseCount = 1,
+                basePierce = 0,
+                baseLifetime = 0.5,
+                damagePerLevel = 15,
+                cooldownPerLevel = -0.15,
+                countAtLevel = {1, 1, 2, 2, 3, 3, 4, 5},
+                pierceAtLevel = {0, 0, 0, 0, 0, 0, 0, 0}
+            }
+        end
+
+        -- 기본값 (알 수 없는 ID)
+        return nil
+    end
+
+    ----------------------------------------
+    -- 사용 가능한 모든 무기 ID 목록
+    ----------------------------------------
+
+    method table GetAllWeaponIds()
+        return {"kunai", "orb", "axe", "aura", "lightning"}
+    end
+
+end

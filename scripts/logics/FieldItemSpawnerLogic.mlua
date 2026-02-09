@@ -1,0 +1,156 @@
+--------------------------------------------------------------------------------
+-- FieldItemSpawnerLogic.mlua
+-- 필드 아이템 랜덤 스폰 로직
+--
+-- [메이커 설정]
+-- 1. 이 스크립트를 Logic으로 등록
+-- 2. 각 아이템 모델 ID 설정
+--------------------------------------------------------------------------------
+
+@Logic
+script FieldItemSpawnerLogic extends Logic
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- 아이템 스폰 간격 (초)
+    @DisplayName("스폰 간격")
+    property number SpawnInterval = 20.0
+
+    -- 힐 아이템 모델 ID
+    @DisplayName("힐 아이템 모델 ID")
+    property string HealModelId = ""
+
+    -- 자석 아이템 모델 ID
+    @DisplayName("자석 아이템 모델 ID")
+    property string MagnetModelId = ""
+
+    -- 폭탄 아이템 모델 ID
+    @DisplayName("폭탄 아이템 모델 ID")
+    property string BombModelId = ""
+
+    -- EXP 아이템 모델 ID
+    @DisplayName("EXP 아이템 모델 ID")
+    property string ExpAllModelId = ""
+
+    -- 스폰 범위 (플레이어 기준)
+    @DisplayName("스폰 범위")
+    property number SpawnRadius = 400
+
+    ----------------------------------------
+    -- Internal
+    ----------------------------------------
+
+    property number _timer = 0
+    property boolean _isActive = false
+    property string _playerEntityId = ""
+
+    ----------------------------------------
+    -- 초기화
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self._isActive = false
+    end
+
+    ----------------------------------------
+    -- 활성화
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void Activate(string playerEntityId)
+        self._playerEntityId = playerEntityId
+        self._isActive = true
+        self._timer = self.SpawnInterval
+        log("[FieldItemSpawner] 활성화")
+    end
+
+    ----------------------------------------
+    -- 매 프레임
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number dt)
+        if not self._isActive then return end
+        if self._playerEntityId == "" then return end
+
+        self._timer = self._timer - dt
+
+        if self._timer <= 0 then
+            self:SpawnRandomItem()
+            self._timer = self.SpawnInterval
+        end
+    end
+
+    ----------------------------------------
+    -- 랜덤 아이템 스폰
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void SpawnRandomItem()
+        ---@type Entity
+        local player = _EntityService:GetEntity(self._playerEntityId)
+        if player == nil then return end
+
+        local pPos = player.TransformComponent.Position
+
+        -- 랜덤 위치 (플레이어 주변)
+        local angle = math.random() * 2 * math.pi
+        local dist = math.random() * self.SpawnRadius + 100
+        local sx = pPos.x + math.cos(angle) * dist
+        local sy = pPos.y + math.sin(angle) * dist
+
+        -- 랜덤 아이템 유형 선택 (가중치 적용)
+        local roll = math.random(1, 100)
+        local modelId = ""
+        local itemType = ""
+
+        if roll <= 40 then
+            -- 40% 확률: 힐
+            modelId = self.HealModelId
+            itemType = "heal"
+        elseif roll <= 60 then
+            -- 20% 확률: 자석
+            modelId = self.MagnetModelId
+            itemType = "magnet"
+        elseif roll <= 80 then
+            -- 20% 확률: EXP 전체
+            modelId = self.ExpAllModelId
+            itemType = "exp_all"
+        else
+            -- 20% 확률: 폭탄
+            modelId = self.BombModelId
+            itemType = "bomb"
+        end
+
+        if modelId == "" then
+            -- 모델이 없으면 힐로 대체 시도
+            if self.HealModelId ~= "" then
+                modelId = self.HealModelId
+                itemType = "heal"
+            else
+                return
+            end
+        end
+
+        local name = "Item_" .. itemType .. "_" .. tostring(math.random(10000, 99999))
+        ---@type Entity
+        local item = _SpawnService:SpawnByModelId(modelId, name, Vector3(sx, sy, pPos.z), nil)
+
+        if item ~= nil then
+            log("[FieldItemSpawner] " .. itemType .. " 아이템 스폰")
+        end
+    end
+
+    ----------------------------------------
+    -- 비활성화
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void Deactivate()
+        self._isActive = false
+    end
+
+end

@@ -1,0 +1,71 @@
+--------------------------------------------------------------------------------
+-- ExpGemSpawnerLogic.mlua
+-- 경험치 젬 스폰 로직 - 적 사망 위치에 경험치 젬 생성
+--
+-- [메이커 설정]
+-- 1. 이 스크립트를 Logic으로 등록
+-- 2. ExpGem 엔티티를 Model로 등록하고 GemModelId에 ID 입력
+--------------------------------------------------------------------------------
+
+@Logic
+script ExpGemSpawnerLogic extends Logic
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- 경험치 젬 모델 ID
+    @DisplayName("젬 모델 ID")
+    property string GemModelId = ""
+
+    -- 기본 경험치량
+    @DisplayName("기본 경험치")
+    property number BaseExpAmount = 10
+
+    -- 플레이어 엔티티 ID
+    property string PlayerEntityId = ""
+
+    ----------------------------------------
+    -- 적 사망 위치에 젬 스폰
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void SpawnGem(number x, number y, number expAmount)
+        if self.GemModelId == "" then
+            log("[ExpGemSpawner] 경고: GemModelId가 설정되지 않음!")
+            return
+        end
+
+        local spawnPos = Vector3(x, y, 0)
+        local gemName = "Gem_" .. tostring(math.random(10000, 99999))
+
+        ---@type Entity
+        local gem = _SpawnService:SpawnByModelId(
+            self.GemModelId,
+            gemName,
+            spawnPos,
+            nil
+        )
+
+        if gem ~= nil then
+            ---@type ExpGem
+            local gemComp = gem.ExpGem
+            if gemComp ~= nil then
+                gemComp.ExpAmount = expAmount
+                if self.PlayerEntityId ~= "" then
+                    gemComp:SetPlayerEntityId(self.PlayerEntityId)
+                end
+            end
+        end
+    end
+
+    ----------------------------------------
+    -- 기본 경험치량으로 스폰 (간편 호출)
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void SpawnGemDefault(number x, number y)
+        self:SpawnGem(x, y, self.BaseExpAmount)
+    end
+
+end

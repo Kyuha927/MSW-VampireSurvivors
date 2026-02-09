@@ -1,0 +1,120 @@
+--------------------------------------------------------------------------------
+-- PlayerMovement.mlua
+-- 플레이어 8방향 이동 컴포넌트
+--
+-- [메이커 설정]
+-- 1. Player 엔티티에 이 스크립트 컴포넌트 추가
+-- 2. Player 엔티티에 TransformComponent 필요 (기본 포함)
+-- 3. Player 엔티티에 SpriteRendererComponent 추가 (캐릭터 스프라이트)
+--------------------------------------------------------------------------------
+
+@Component
+script PlayerMovement extends Component
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- 이동 속도 (픽셀/초)
+    @Sync
+    @DisplayName("이동 속도")
+    @Description("플레이어의 이동 속도 (px/s)")
+    property number MoveSpeed = 200
+
+    -- 키 입력 상태 추적 (클라이언트 로컬)
+    property boolean _pressUp = false
+    property boolean _pressDown = false
+    property boolean _pressLeft = false
+    property boolean _pressRight = false
+
+    -- 마지막 이동 방향 (공격 방향 등에 활용)
+    @Sync
+    property number LastDirX = 1
+    @Sync
+    property number LastDirY = 0
+
+    ----------------------------------------
+    -- 매 프레임 이동 처리 (Client)
+    ----------------------------------------
+
+    @ExecSpace("ClientOnly")
+    method void OnUpdate(number dt)
+        local dirX = 0
+        local dirY = 0
+
+        if self._pressUp then dirY = dirY + 1 end
+        if self._pressDown then dirY = dirY - 1 end
+        if self._pressLeft then dirX = dirX - 1 end
+        if self._pressRight then dirX = dirX + 1 end
+
+        -- 입력이 없으면 이동하지 않음
+        if dirX == 0 and dirY == 0 then
+            return
+        end
+
+        -- 대각선 이동 시 속도 정규화
+        local len = math.sqrt(dirX * dirX + dirY * dirY)
+        if len > 0 then
+            dirX = dirX / len
+            dirY = dirY / len
+        end
+
+        -- 서버에 이동 요청
+        self:ServerMove(dirX, dirY, dt)
+    end
+
+    ----------------------------------------
+    -- 서버 측 위치 갱신
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void ServerMove(number dirX, number dirY, number dt)
+        local transform = self.Entity.TransformComponent
+        local pos = transform.Position
+        local speed = self.MoveSpeed * dt
+
+        local newX = pos.x + dirX * speed
+        local newY = pos.y + dirY * speed
+
+        transform.Position = Vector3(newX, newY, pos.z)
+
+        -- 마지막 이동 방향 저장 (나중에 공격 방향으로 활용)
+        self.LastDirX = dirX
+        self.LastDirY = dirY
+    end
+
+    ----------------------------------------
+    -- 키 입력 이벤트 핸들러
+    ----------------------------------------
+
+    @EventSender("Service", "InputService")
+    handler OnKeyDown(KeyDownEvent event)
+        local key = event.key
+
+        if key == KeyboardKey.W or key == KeyboardKey.Up then
+            self._pressUp = true
+        elseif key == KeyboardKey.S or key == KeyboardKey.Down then
+            self._pressDown = true
+        elseif key == KeyboardKey.A or key == KeyboardKey.Left then
+            self._pressLeft = true
+        elseif key == KeyboardKey.D or key == KeyboardKey.Right then
+            self._pressRight = true
+        end
+    end
+
+    @EventSender("Service", "InputService")
+    handler OnKeyUp(KeyUpEvent event)
+        local key = event.key
+
+        if key == KeyboardKey.W or key == KeyboardKey.Up then
+            self._pressUp = false
+        elseif key == KeyboardKey.S or key == KeyboardKey.Down then
+            self._pressDown = false
+        elseif key == KeyboardKey.A or key == KeyboardKey.Left then
+            self._pressLeft = false
+        elseif key == KeyboardKey.D or key == KeyboardKey.Right then
+            self._pressRight = false
+        end
+    end
+
+end

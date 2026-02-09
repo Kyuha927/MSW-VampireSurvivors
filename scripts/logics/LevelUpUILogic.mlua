@@ -1,0 +1,277 @@
+--------------------------------------------------------------------------------
+-- LevelUpUILogic.mlua
+-- 레벨업 선택지 UI 관리 로직
+--
+-- [메이커 설정]
+-- 1. 이 스크립트를 Logic으로 등록
+-- 2. UI에 3개의 버튼 엔티티 필요 (Option1, Option2, Option3)
+--    - 각 버튼에 TextComponent로 이름/설명 표시
+--    - ButtonComponent로 클릭 이벤트 처리
+-- 3. UI 배경 패널 엔티티 필요 (LevelUpPanel)
+--
+-- ※ 실제 UI 엔티티 구성은 메이커에서 직접 배치합니다.
+--   이 로직은 선택지 데이터 생성과 선택 처리를 담당합니다.
+--------------------------------------------------------------------------------
+
+@Logic
+script LevelUpUILogic extends Logic
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- UI 패널 엔티티 ID
+    @DisplayName("UI 패널 ID")
+    property string PanelEntityId = ""
+
+    -- 현재 표시 중인 3개 선택지 데이터
+    property table _options = {}
+
+    -- UI 활성화 상태
+    @Sync
+    property boolean IsShowing = false
+
+    -- 플레이어 엔티티 ID
+    property string PlayerEntityId = ""
+
+    ----------------------------------------
+    -- 선택지 생성 및 UI 표시
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void Show(string playerEntityId)
+        if self.IsShowing then
+            return
+        end
+
+        self.PlayerEntityId = playerEntityId
+        self.IsShowing = true
+
+        -- 선택지 3개 생성
+        self._options = self:GenerateOptions(playerEntityId)
+
+        -- 클라이언트에 선택지 정보 전달
+        -- ※ 실제로는 각 선택지의 이름/설명을 UI 텍스트에 반영
+        local opt1Name = ""
+        local opt1Desc = ""
+        local opt2Name = ""
+        local opt2Desc = ""
+        local opt3Name = ""
+        local opt3Desc = ""
+
+        if self._options[1] ~= nil then
+            opt1Name = self._options[1].name
+            opt1Desc = self._options[1].description
+        end
+        if self._options[2] ~= nil then
+            opt2Name = self._options[2].name
+            opt2Desc = self._options[2].description
+        end
+        if self._options[3] ~= nil then
+            opt3Name = self._options[3].name
+            opt3Desc = self._options[3].description
+        end
+
+        self:ShowUI(opt1Name, opt1Desc, opt2Name, opt2Desc, opt3Name, opt3Desc)
+
+        log("[LevelUpUI] 선택지 표시:")
+        log("  1. " .. opt1Name .. " - " .. opt1Desc)
+        log("  2. " .. opt2Name .. " - " .. opt2Desc)
+        log("  3. " .. opt3Name .. " - " .. opt3Desc)
+    end
+
+    ----------------------------------------
+    -- UI 표시 (클라이언트)
+    ----------------------------------------
+
+    @ExecSpace("Client")
+    method void ShowUI(string n1, string d1, string n2, string d2, string n3, string d3)
+        -- TODO: 실제 UI 엔티티의 텍스트 갱신 + 패널 보이기
+        -- local panel = _EntityService:GetEntity(self.PanelEntityId)
+        -- if panel ~= nil then
+        --     panel.Enable = true
+        -- end
+
+        -- 버튼 텍스트 설정
+        -- option1Button.TextComponent.Text = n1 .. "\n" .. d1
+        -- option2Button.TextComponent.Text = n2 .. "\n" .. d2
+        -- option3Button.TextComponent.Text = n3 .. "\n" .. d3
+
+        log("[LevelUpUI] UI 표시됨 (클라이언트)")
+    end
+
+    ----------------------------------------
+    -- 선택지 생성 (무기 + 패시브 혼합)
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method table GenerateOptions(string playerEntityId)
+        local options = {}
+        local candidatePool = {}
+
+        ---@type Entity
+        local playerEntity = _EntityService:GetEntity(playerEntityId)
+        if playerEntity == nil then
+            return options
+        end
+
+        ---@type PlayerStats
+        local stats = playerEntity.PlayerStats
+
+        -- 무기 후보 추가 (WeaponManagerLogic과 연동)
+        ---@type WeaponManagerLogic
+        local weaponMgr = _WeaponManagerLogic
+        local weaponIds = {"kunai", "orb", "axe", "aura", "lightning"}
+        local weaponNames = {
+            kunai = "쿠나이",
+            orb = "회전 구체",
+            axe = "도끼",
+            aura = "보호 오라",
+            lightning = "번개"
+        }
+
+        for _, wid in ipairs(weaponIds) do
+            local currentLv = 0
+            if weaponMgr ~= nil then
+                currentLv = weaponMgr:GetWeaponLevel(wid)
+            end
+
+            -- 최대 레벨(8) 미만이면 후보에 추가
+            -- 새 무기인 경우 슬롯 체크
+            if currentLv < 8 then
+                local canAdd = true
+                if currentLv == 0 and weaponMgr ~= nil then
+                    if weaponMgr:GetWeaponCount() >= weaponMgr.MaxWeaponSlots then
+                        canAdd = false
+                    end
+                end
+
+                if canAdd then
+                    local desc = ""
+                    if currentLv == 0 then
+                        desc = "신규 획득!"
+                    else
+                        desc = "Lv." .. tostring(currentLv) .. " → Lv." .. tostring(currentLv + 1)
+                    end
+
+                    table.insert(candidatePool, {
+                        type = "weapon",
+                        id = wid,
+                        name = weaponNames[wid] or wid,
+                        description = desc
+                    })
+                end
+            end
+        end
+
+        -- 패시브 후보 추가
+        local passiveIds = {"speed_up", "damage_up", "cooldown_down", "max_hp_up", "hp_regen", "magnet", "area_up"}
+        local passiveNames = {
+            speed_up = "이동속도 증가",
+            damage_up = "공격력 증가",
+            cooldown_down = "쿨다운 감소",
+            max_hp_up = "최대 HP 증가",
+            hp_regen = "HP 재생",
+            magnet = "아이템 자석",
+            area_up = "범위 증가"
+        }
+
+        for _, pid in ipairs(passiveIds) do
+            local currentLv = 0
+            if stats ~= nil then
+                currentLv = stats:GetPassiveLevel(pid)
+            end
+
+            -- 최대 레벨(5) 미만이면 후보에 추가
+            if currentLv < 5 then
+                table.insert(candidatePool, {
+                    type = "passive",
+                    id = pid,
+                    name = passiveNames[pid] or pid,
+                    description = "패시브 Lv." .. tostring(currentLv + 1)
+                })
+            end
+        end
+
+        -- 후보에서 랜덤 3개 선택
+        local count = math.min(3, #candidatePool)
+        for i = 1, count do
+            local idx = math.random(1, #candidatePool)
+            table.insert(options, candidatePool[idx])
+            table.remove(candidatePool, idx)
+        end
+
+        return options
+    end
+
+    ----------------------------------------
+    -- 선택 처리 (UI 버튼에서 호출)
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void SelectOption(number optionIndex)
+        if not self.IsShowing then
+            return
+        end
+
+        if optionIndex < 1 or optionIndex > #self._options then
+            return
+        end
+
+        local selected = self._options[optionIndex]
+        log("[LevelUpUI] 선택: " .. tostring(optionIndex) .. " - " .. selected.name)
+
+        ---@type Entity
+        local playerEntity = _EntityService:GetEntity(self.PlayerEntityId)
+        if playerEntity == nil then
+            return
+        end
+
+        if selected.type == "weapon" then
+            -- 무기 획득/강화 처리 (WeaponManagerLogic 연동)
+            ---@type WeaponManagerLogic
+            local weaponMgr = _WeaponManagerLogic
+            if weaponMgr ~= nil then
+                weaponMgr:AddOrUpgradeWeapon(selected.id)
+            end
+            log("[LevelUpUI] 무기 선택: " .. selected.id)
+
+        elseif selected.type == "passive" then
+            -- 패시브 적용
+            ---@type PlayerStats
+            local stats = playerEntity.PlayerStats
+            if stats ~= nil then
+                stats:ApplyPassive(selected.id)
+            end
+        end
+
+        -- UI 닫기
+        self:Hide()
+
+        -- 레벨업 완료 알림
+        ---@type LevelSystem
+        local levelSys = playerEntity.LevelSystem
+        if levelSys ~= nil then
+            levelSys:ConfirmLevelUp()
+        end
+    end
+
+    ----------------------------------------
+    -- UI 숨기기
+    ----------------------------------------
+
+    @ExecSpace("Multicast")
+    method void Hide()
+        self.IsShowing = false
+        self._options = {}
+
+        -- TODO: UI 패널 숨기기
+        -- local panel = _EntityService:GetEntity(self.PanelEntityId)
+        -- if panel ~= nil then
+        --     panel.Enable = false
+        -- end
+
+        log("[LevelUpUI] UI 닫힘")
+    end
+
+end

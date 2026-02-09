@@ -1,0 +1,139 @@
+--------------------------------------------------------------------------------
+-- Health.mlua
+-- HP 관리 컴포넌트 (플레이어 & 적 공용)
+--
+-- [메이커 설정]
+-- 1. Player 엔티티, Enemy 모델 모두에 이 컴포넌트 추가
+-- 2. MaxHP 값을 엔티티별로 적절히 설정
+--    - Player: 100
+--    - 기본 적: 10
+--------------------------------------------------------------------------------
+
+@Component
+script Health extends Component
+
+    ----------------------------------------
+    -- Properties
+    ----------------------------------------
+
+    -- 최대 HP
+    @Sync
+    @DisplayName("최대 HP")
+    property number MaxHP = 100
+
+    -- 현재 HP
+    @Sync
+    @DisplayName("현재 HP")
+    property number CurrentHP = 100
+
+    -- 살아있는지 여부
+    @Sync
+    property boolean IsAlive = true
+
+    -- 피격 무적 시간 (초)
+    @DisplayName("무적 시간")
+    @Description("피격 후 무적 지속 시간 (초)")
+    property number InvincibleDuration = 0.5
+
+    -- 무적 타이머 (내부 사용)
+    property number _invincibleTimer = 0
+
+    -- 현재 무적 상태인지
+    property boolean _isInvincible = false
+
+    ----------------------------------------
+    -- 초기화
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnBeginPlay()
+        self.CurrentHP = self.MaxHP
+        self.IsAlive = true
+        self._isInvincible = false
+        self._invincibleTimer = 0
+    end
+
+    ----------------------------------------
+    -- 무적 타이머 갱신
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void OnUpdate(number dt)
+        if self._isInvincible then
+            self._invincibleTimer = self._invincibleTimer - dt
+            if self._invincibleTimer <= 0 then
+                self._isInvincible = false
+                self._invincibleTimer = 0
+            end
+        end
+    end
+
+    ----------------------------------------
+    -- 데미지 처리
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void TakeDamage(number damage)
+        -- 이미 죽었으면 무시
+        if not self.IsAlive then
+            return
+        end
+
+        -- 무적 상태면 무시
+        if self._isInvincible then
+            return
+        end
+
+        -- HP 감소
+        self.CurrentHP = self.CurrentHP - damage
+
+        -- 무적 시간 적용
+        if self.InvincibleDuration > 0 then
+            self._isInvincible = true
+            self._invincibleTimer = self.InvincibleDuration
+        end
+
+        log("데미지! 남은 HP: " .. tostring(self.CurrentHP))
+
+        -- 사망 판정
+        if self.CurrentHP <= 0 then
+            self.CurrentHP = 0
+            self:Die()
+        end
+    end
+
+    ----------------------------------------
+    -- HP 회복
+    ----------------------------------------
+
+    @ExecSpace("Server")
+    method void Heal(number amount)
+        if not self.IsAlive then
+            return
+        end
+
+        self.CurrentHP = math.min(self.CurrentHP + amount, self.MaxHP)
+    end
+
+    ----------------------------------------
+    -- 사망 처리
+    ----------------------------------------
+
+    @ExecSpace("ServerOnly")
+    method void Die()
+        self.IsAlive = false
+
+        log(self.Entity.Name .. " 사망!")
+
+        -- TODO: 사망 이펙트, 경험치 드롭 등은 Phase 2에서 구현
+        -- 적인 경우: 엔티티 제거
+        -- 플레이어인 경우: 게임 오버 처리
+
+        -- 적이면 일정 시간 후 엔티티 파괴
+        -- ※ 플레이어 엔티티에는 적용하지 않도록 GameManager에서 분기 처리
+        self.Entity:Destroy()
+        -- ※ API가 다를 수 있음. 대안:
+        -- _EntityService:Destroy(self.Entity)
+    end
+
+end
