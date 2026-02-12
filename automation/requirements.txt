@@ -1,0 +1,24 @@
+# MSW Maker 자동화 - 필수 패키지
+
+# GUI 자동화
+pyautogui>=0.9.54
+
+# 이미지 처리
+opencv-python>=4.8.0
+numpy>=1.24.0
+
+# OCR 엔진
+rapidocr-onnxruntime>=1.3.0
+
+# 빠른 화면 캡처
+mss>=9.0.0
+
+# 클립보드 붙여넣기 (한글 포함 코드)
+pyperclip>=1.8.0
+
+# LLM 백업 (선택사항)
+anthropic>=0.18.0
+requests>=2.31.0
+
+# 환경 변수 관리
+python-dotenv>=1.0.0

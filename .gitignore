@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Backup files
+*.bak
+*.codex*
+
+# Debug outputs
+debug_screenshots/
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+.venv/
+venv/
+
+# Automation version backups (keep only current)
+automation/v1.0/
+automation/v1.5/
+automation/v2.0/
