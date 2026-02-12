@@ -1,174 +1,202 @@
-# MSW 뱀서라이크 프로젝트
+# MSW Maker 자동화 시스템
 
-메이플스토리 월드에서 개발하는 뱀서라이크(Vampire Survivors-like) 게임입니다.
+MSW Maker GUI를 자동으로 제어하여 컴포넌트 스크립트를 대량 생성하고 Lua 코드를 자동으로 붙여넣는 Python 기반 자동화 도구입니다.
 
-## 프로젝트 구조
+## 기능
 
-```
-MSW-VampireSurvivors/
-├── docs/
-│   └── game-design.md                   # 전체 게임 기획서
-├── scripts/
-│   ├── components/                       # 엔티티에 붙이는 컴포넌트
-│   │   ├── PlayerMovement.mlua           # 플레이어 8방향 이동
-│   │   ├── EnemyChase.mlua               # 적 추적 AI
-│   │   ├── Health.mlua                   # HP 시스템 (공용)
-│   │   ├── ContactDamage.mlua            # 접촉 데미지
-│   │   ├── AutoAttack.mlua               # 기본 자동 공격 (선택적)
-│   │   ├── Projectile.mlua               # 투사체 이동 + 충돌
-│   │   ├── ExpGem.mlua                   # 경험치 보석 + 자석
-│   │   ├── LevelSystem.mlua              # 경험치/레벨 관리
-│   │   ├── PlayerStats.mlua              # 승수 기반 스탯
-│   │   ├── OrbBehavior.mlua              # 회전 구체 공전
-│   │   ├── BossEnemy.mlua                # 보스 특수 행동
-│   │   ├── FieldItem.mlua                # 필드 아이템 (치유/자석/폭탄)
-│   │   ├── SurvivalTimerUI.mlua          # 생존 타이머 UI
-│   │   ├── KillCountUI.mlua              # 킬 카운트 UI
-│   │   └── HpBarUI.mlua                  # HP바 UI
-│   └── logics/                           # 전역 게임 로직
-│       ├── GameManagerLogic.mlua          # 게임 상태 관리
-│       ├── EnemySpawnerLogic.mlua         # 적 웨이브 스폰
-│       ├── BossSpawnerLogic.mlua          # 보스 주기 스폰
-│       ├── ExpGemSpawnerLogic.mlua        # 경험치 보석 스폰
-│       ├── FieldItemSpawnerLogic.mlua     # 필드 아이템 스폰
-│       ├── WeaponManagerLogic.mlua        # 무기 슬롯/공격 실행
-│       ├── WeaponData.mlua                # 5종 무기 데이터
-│       ├── PassiveData.mlua               # 7종 패시브 데이터
-│       ├── LevelUpUILogic.mlua            # 레벨업 선택지 UI
-│       └── ResultScreenLogic.mlua         # 결과 화면 표시
-└── README.md
+- **자동 스크립트 생성**: MyDesk 우클릭 → 메뉴 선택 → 이름 입력 → 생성
+- **자동 코드 붙여넣기**: Plain Text 탭 선택 → Lua 파일 내용 붙여넣기 → 저장
+- **OCR 기반 메뉴 인식**: RapidOCR로 메뉴 텍스트 인식 및 클릭
+- **매크로 캐싱**: 첫 실행 후 좌표 캐싱으로 빠른 반복 실행
+- **ESC 즉시 중단**: 실행 중 ESC 키로 안전하게 중단 가능
+
+## 설치 방법
+
+### 방법 1: ZIP 다운로드
+
+1. 링크 클릭: [Download ZIP](https://github.com/[USERNAME]/[REPO]/archive/refs/heads/master.zip)
+2. 압축 해제
+3. PowerShell에서 해당 폴더로 이동:
+
+```powershell
+cd C:\Users\[사용자명]\Downloads\MSW-VampireSurvivors-master
+pip install -r automation/requirements.txt
+python run_msw_setup.py
 ```
 
-## MSW 메이커 설정 가이드
+### 방법 2: PowerShell 한 줄 설치 (관리자 권한)
 
-### 사전 준비
+```powershell
+iwr -useb https://raw.githubusercontent.com/[USERNAME]/[REPO]/master/install.ps1 | iex
+```
 
-1. **메이플스토리 월드 메이커** 접속
-2. **LocalWorkspace 활성화** (Workspace > WorldConfig > LocalWorkspace)
-3. **ExtendedScriptFormat 활성화** (UseExtendedScriptFormat 체크)
-4. **VS Code 연동 활성화** (File > Setting > 만들기 > LocalWorkspace)
+### 방법 3: curl/wget (Linux/Mac용)
 
-### Step 1: 스크립트 등록
+```bash
+# ZIP 다운로드
+curl -L -o msw-automation.zip https://github.com/[USERNAME]/[REPO]/archive/refs/heads/master.zip
+unzip msw-automation.zip
+cd MSW-VampireSurvivors-master
+pip install -r automation/requirements.txt
+python run_msw_setup.py
+```
 
-메이커에서 아래 스크립트 엔트리를 생성하고, 이 프로젝트의 `.mlua` 파일 내용을 복사합니다.
+### 방법 4: Git Clone
 
-| 스크립트 | 타입 | 용도 |
-|----------|------|------|
-| `PlayerMovement` | Component | 플레이어 이동 |
-| `EnemyChase` | Component | 적 추적 AI |
-| `Health` | Component | HP 관리 |
-| `ContactDamage` | Component | 접촉 데미지 |
-| `AutoAttack` | Component | 기본 자동 공격 (선택적) |
-| `Projectile` | Component | 투사체 이동/충돌 |
-| `ExpGem` | Component | 경험치 보석 |
-| `LevelSystem` | Component | 레벨/경험치 |
-| `PlayerStats` | Component | 스탯 승수 관리 |
-| `OrbBehavior` | Component | 회전 구체 공전 |
-| `BossEnemy` | Component | 보스 특수 행동 |
-| `FieldItem` | Component | 필드 아이템 |
-| `SurvivalTimerUI` | Component | 타이머 UI |
-| `KillCountUI` | Component | 킬 카운트 UI |
-| `HpBarUI` | Component | HP바 UI |
-| `GameManagerLogic` | Logic | 게임 상태 관리 |
-| `EnemySpawnerLogic` | Logic | 적 스폰 관리 |
-| `BossSpawnerLogic` | Logic | 보스 스폰 관리 |
-| `ExpGemSpawnerLogic` | Logic | 보석 스폰 관리 |
-| `FieldItemSpawnerLogic` | Logic | 아이템 스폰 관리 |
-| `WeaponManagerLogic` | Logic | 무기 슬롯/공격 |
-| `WeaponData` | Logic | 무기 데이터 |
-| `PassiveData` | Logic | 패시브 데이터 |
-| `LevelUpUILogic` | Logic | 레벨업 UI |
-| `ResultScreenLogic` | Logic | 결과 화면 |
+```bash
+git clone https://github.com/[USERNAME]/[REPO].git
+cd MSW-VampireSurvivors
+pip install -r automation/requirements.txt
+python run_msw_setup.py
+```
 
-### Step 2: Model 생성 (적, 투사체, 보석, 아이템 등)
+### 수동 설치 (의존성)
 
-**Enemy Model:**
-1. 새 엔티티 → TransformComponent, SpriteRendererComponent, TriggerComponent
-2. + `EnemyChase` (Speed: 80) + `Health` (MaxHP: 10) + `ContactDamage` (Damage: 10)
-3. **Model로 등록** → ID 복사
+```bash
+pip install pyautogui mss rapidocr-onnxruntime pyperclip opencv-python numpy
+```
 
-**Projectile Models (쿠나이, 도끼 등):**
-1. 새 엔티티 → TransformComponent, SpriteRendererComponent, TriggerComponent
-2. + `Projectile` (Speed/Damage/Lifetime 기본값)
-3. 무기 종류별 각각 Model 등록 → ID 복사
+## 실행 방법
 
-**Orb Model (회전 구체):**
-1. 새 엔티티 → TransformComponent, SpriteRendererComponent, TriggerComponent
-2. + `Projectile` + `OrbBehavior`
-3. Model 등록 → ID 복사
+### 1. 전체 자동화 (생성 + 코드 붙여넣기 + 저장)
 
-**ExpGem Model:**
-1. 새 엔티티 → TransformComponent, SpriteRendererComponent, TriggerComponent
-2. + `ExpGem`
-3. Model 등록 → ID 복사
+```powershell
+python run_msw_setup.py
+```
 
-**Boss Model:**
-1. 새 엔티티 → TransformComponent, SpriteRendererComponent (크게), TriggerComponent (넓게)
-2. + `EnemyChase` (Speed: 50) + `Health` (MaxHP: 500) + `ContactDamage` (Damage: 30) + `BossEnemy`
-3. Model 등록 → ID 복사
+**동작 순서**:
+1. 11개 컴포넌트 순회 (PlayerMovement, EnemyChase, Health 등)
+2. 각 컴포넌트별:
+   - MyDesk 우클릭
+   - "Create Scripts" → "Create Script" 선택
+   - 스크립트명 입력 + Enter
+   - 2초 대기 (에디터 열림)
+   - "Plain Text" 탭 선택
+   - 편집영역 클릭 → Ctrl+A → Lua 코드 붙여넣기
+   - Ctrl+S 저장
+3. 다음 컴포넌트로 진행
 
-**FieldItem Models (힐/자석/폭탄/EXP):**
-1. 아이템별 엔티티 → TransformComponent, SpriteRendererComponent, TriggerComponent
-2. + `FieldItem` (ItemType 설정: "heal"/"magnet"/"bomb"/"exp_all")
-3. 각각 Model 등록 → ID 복사
+**중지**: 실행 중 `ESC` 키 누르기 (50ms 폴링으로 즉시 반응)
 
-### Step 3: Player 엔티티 설정
+### 2. 생성만 (코드 붙여넣기 없이)
 
-1. Player 엔티티에 아래 컴포넌트를 추가합니다:
-   - `PlayerMovement` → MoveSpeed: 200
-   - `Health` → MaxHP: 100, InvincibleDuration: 0.5
-   - `LevelSystem` → RequiredExpBase: 20, ExpGrowthRate: 1.3
-   - `PlayerStats` → (기본값 사용)
-   - `TriggerComponent` → 피격 판정 영역 설정
+```powershell
+python run_create_only.py
+```
 
-### Step 4: UI 엔티티 설정
+스크립트 생성까지만 수행합니다.
 
-1. **생존 타이머** 엔티티 → TextComponent + `SurvivalTimerUI`
-2. **킬 카운트** 엔티티 → TextComponent + `KillCountUI`
-3. **HP 바** 엔티티 → SpriteRendererComponent + `HpBarUI`
-4. **레벨업 패널** 엔티티 → 3개 버튼 엔티티 (선택지)
+## 주요 파일 구조
 
-### Step 5: Logic 설정
+```
+automation/
+├── msw_controller.py          # 메인 컨트롤러 (UI 제어, OCR 클릭)
+├── msw_menu_vision.py         # OCR 엔진 (RapidOCR + 이미지 처리)
+├── msw_workflow.py            # 워크플로우 정의
+├── find_region.py             # 리전 좌표 측정 도구
+├── config.py                  # 설정 및 피처 플래그
+├── requirements.txt           # Python 의존성
+└── workflows/
+    ├── create_only.py         # 생성-only 워크플로우
+    └── create_and_paste.py    # 생성+붙여넣기 워크플로우
 
-1. `GameManagerLogic` → TimeLimit: 600
-2. `EnemySpawnerLogic` → EnemyModelId: (Step 2에서 복사한 ID)
-3. `BossSpawnerLogic` → Boss1ModelId: (보스 Model ID), BossInterval: 60
-4. `ExpGemSpawnerLogic` → GemModelId: (보석 Model ID)
-5. `FieldItemSpawnerLogic` → 각 아이템 Model ID 설정
-6. `WeaponManagerLogic` → 각 무기 투사체 Model ID 설정
-7. `WeaponData`, `PassiveData`, `LevelUpUILogic`, `ResultScreenLogic` 등록
+run_msw_setup.py               # 메인 실행 진입점
+```
 
-### Step 6: 게임 시작 연결
+## 좌표 설정
 
-게임 시작 시 `GameManagerLogic:StartGame(playerEntityId)`를 호출해야 합니다.
-플레이어 접속 이벤트에서 이를 자동 호출하도록 연결합니다.
+**MyDesk 위치** (수동 설정 필요):
+```python
+# automation/msw_controller.py
+MYDESK_X = 1824
+MYDESK_Y = 894
+```
 
-## 개발 단계
+**Plain Text 탭 리전** (1920x1080 기준 비율):
+```python
+# run_msw_setup.py
+tab_x0_ratio = 0.7646      # 화면 너비의 76.46%
+tab_y0_ratio = 0.8222      # 화면 높이의 82.22%
+tab_w_ratio  = 0.0615      # 화면 너비의 6.15%
+tab_h_ratio  = 0.0176      # 화면 높이의 1.76%
+```
 
-- [x] **1단계:** 코어 생존 루프 (이동, 적 스폰, 추적, 피격)
-- [x] **2단계:** 자동 공격 + 경험치 (투사체, EXP 보석, 레벨)
-- [x] **3단계:** 레벨업 선택 시스템 (무기/패시브 데이터, UI, 스탯)
-- [x] **4단계:** 무기 다양화 (WeaponManager, 회전구체, 5종 무기)
-- [x] **5단계:** 마무리 (보스, 필드아이템, HP바, 타이머, 결과화면)
+**좌표 측정 도구 사용**:
+```powershell
+python automation/find_region.py
+# 마우스를 원하는 위치로 이동하면 좌표 표시
+# Ctrl+C로 복사
+```
 
-## 무기 종류 (5종)
+## 문제 해결
 
-| 무기 | 설명 | 최대 레벨 |
-|------|------|-----------|
-| 쿠나이 (kunai) | 가까운 적 방향 직선 투사체 | 8 |
-| 회전 구체 (orb) | 플레이어 주위 공전 | 8 |
-| 도끼 (axe) | 위로 포물선 궤적 | 8 |
-| 보호 오라 (aura) | 주변 범위 지속 데미지 | 8 |
-| 번개 (lightning) | 랜덤 위치 즉발 데미지 | 8 |
+### 1. OCR 인식 실패
 
-## 패시브 종류 (7종)
+**증상**: "Create Scripts"를 찾지 못함
 
-| 패시브 | 레벨당 효과 | 최대 레벨 |
-|--------|-------------|-----------|
-| 이동속도 증가 | +10% | 5 |
-| 공격력 증가 | +15% | 5 |
-| 쿨다운 감소 | -8% | 5 |
-| 최대 HP 증가 | +20 | 5 |
-| HP 재생 | +1 HP/5s | 5 |
-| 아이템 자석 | +30% 범위 | 5 |
-| 범위 증가 | +10% | 5 |
+**해결**:
+- MSW Maker 창이 화면 중앙에 위치하는지 확인
+- MyDesk 좌표(`MYDESK_X`, `MYDESK_Y`) 재설정
+- `find_region.py`로 실제 좌표 측정 후 수정
+
+### 2. 캐시 좌표 불일치
+
+**증상**: 두 번째 컴포넌트부터 "Cache mismatch" 경고
+
+**해결**:
+- 이는 정상 동작 (메뉴가 닫혀서 검증 실패)
+- 캐시 검증을 생략하도록 수정됨 (빠른 매크로 실행)
+
+### 3. Plain Text 탭을 못 찾음
+
+**증상**: "Plain Text" OCR 실패
+
+**해결**:
+- `find_region.py`로 Plain Text 탭 좌표 직접 측정
+- `run_msw_setup.py`의 비율 값 수정
+
+### 4. ESC가 안 먹음
+
+**증상**: ESC를 눌러도 종료 안 됨
+
+**해결**:
+- `Ctrl+C`로 강제 종료
+- 코드 수정: `_sleep_interruptible()` 사용 확인
+
+## 작동 원리
+
+### OCR 메뉴 클릭 흐름
+
+1. **캐시 확인**: 이전 실행 좌표가 있으면 바로 클릭
+2. **OCR 스캔**: 없으면 화면 캡처 후 RapidOCR로 텍스트 인식
+3. **퍼지 매칭**: "Create Scripts"와 OCR 결과 비교 (유사도 0.45 이상)
+4. **클릭 실행**: 매칭된 위치 클릭 후 좌표 캐싱
+
+### 워크플로우 시스템
+
+```python
+CREATE_AND_PASTE_SCRIPT_WORKFLOW = [
+    {"action": "right_click"},
+    {"action": "select_menu", "goal": "Create Scripts"},
+    {"action": "select_menu", "goal": "Create Script"},
+    {"action": "type_text", "text": "SCRIPT_NAME"},
+    {"action": "press_key", "key": "enter"},
+    {"action": "wait", "seconds": 2.0},
+    {"action": "select_menu", "goal": "Plain Text", "region": "PLAINTEXT_TAB_REGIONS"},
+    {"action": "click_region_center", "region": "EDITOR_TEXT_REGIONS"},
+    {"action": "hotkey", "keys": ["ctrl", "a"]},
+    {"action": "paste_file_content", "file": "LUA_FILE_PATH"},
+    {"action": "hotkey", "keys": ["ctrl", "s"]},
+]
+```
+
+## 주의사항
+
+1. **화면 해상도**: 1920x1080 기준으로 설정됨. 다른 해상도는 좌표 재조정 필요
+2. **MSW Maker 창**: 실행 전 반드시 활성화 및 화면 중앙 배치
+3. **관리자 권한**: 필요시 PowerShell을 관리자 권한으로 실행
+4. **백업**: 중요한 프로젝트는 실행 전 백업 권장
+
+## 라이선스
+
+이 프로젝트는 남부럽지 않게 만든 자동화 도구입니다.
