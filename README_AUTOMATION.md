@@ -10,16 +10,50 @@ MSW Maker GUI를 자동으로 제어하여 컴포넌트 스크립트를 대량 �
 - **매크로 캐싱**: 첫 실행 후 좌표 캐싱으로 빠른 반복 실행
 - **ESC 즉시 중단**: 실행 중 ESC 키로 안전하게 중단 가능
 
-## 요구사항
+## 설치 방법
+
+### 방법 1: ZIP 다운로드
+
+1. 링크 클릭: [Download ZIP](https://github.com/[USERNAME]/[REPO]/archive/refs/heads/master.zip)
+2. 압축 해제
+3. PowerShell에서 해당 폴더로 이동:
+
+```powershell
+cd C:\Users\[사용자명]\Downloads\MSW-VampireSurvivors-master
+pip install -r automation/requirements.txt
+python run_msw_setup.py
+```
+
+### 방법 2: PowerShell 한 줄 설치 (관리자 권한)
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/[USERNAME]/[REPO]/master/install.ps1 | iex
+```
+
+### 방법 3: curl/wget (Linux/Mac용)
+
+```bash
+# ZIP 다운로드
+curl -L -o msw-automation.zip https://github.com/[USERNAME]/[REPO]/archive/refs/heads/master.zip
+unzip msw-automation.zip
+cd MSW-VampireSurvivors-master
+pip install -r automation/requirements.txt
+python run_msw_setup.py
+```
+
+### 방법 4: Git Clone
+
+```bash
+git clone https://github.com/[USERNAME]/[REPO].git
+cd MSW-VampireSurvivors
+pip install -r automation/requirements.txt
+python run_msw_setup.py
+```
+
+### 수동 설치 (의존성)
 
 ```bash
 pip install pyautogui mss rapidocr-onnxruntime pyperclip opencv-python numpy
-```
-
-또는:
-
-```bash
-pip install -r automation/requirements.txt
 ```
 
 ## 실행 방법
